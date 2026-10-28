@@ -94,7 +94,7 @@ O simulador repete aproximadamente a cada 5 minutos: operação normal, subtens�
 O visual do painel principal foi reconstruído com base na imagem aprovada (1536 × 1024):
 barra superior azul-marinho, menu lateral à esquerda, quatro cartões de concessionária
 e geradores, unifilar conceitual, alarmes ativos, última comunicação, seis mini-gráficos
-e tabela de eventos recentes. A referência está em `docs/referencia-dashboard-aprovado.png`.
+e tabela de eventos recentes. A imagem de referência acompanha o pacote ZIP entregue, em `docs/referencia-dashboard-aprovado.png`.
 
 - **Não são usados os valores da imagem como dados reais.** Campos indisponíveis ficam como `—`.
 - Cartões e diagrama mostram estado **apenas** se existem leituras válidas para ele.
