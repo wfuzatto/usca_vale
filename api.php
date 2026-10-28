@@ -10,6 +10,19 @@ try {
     $input=json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);
     if (!is_array($input)) throw new InvalidArgumentException('JSON inválido');
     switch($action) {
+    case 'topology_save':
+        $labels=$input['labels']??null;
+        if (!is_array($labels)) throw new InvalidArgumentException('Rótulos de topologia inválidos');
+        $safe=[];
+        foreach (['mains','bus','loads'] as $key){
+            $v=$labels[$key]??null;
+            if (!is_string($v)) throw new InvalidArgumentException('Rótulo inválido: '.$key);
+            $v=cleanStr(strip_tags($v),50);
+            if($v==='') throw new InvalidArgumentException('Rótulo obrigatório: '.$key);
+            $safe[$key]=$v;
+        }
+        setSetting('topology_labels',json_encode($safe,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+        jsonOut(['ok'=>true,'labels'=>$safe]);
     case 'device_save':
         $id=(int)($input['id']??0);$name=cleanStr($input['name']??'Controlador');$host=cleanStr($input['host']??'',255);
         $port=(int)($input['port']??502);$unit=(int)($input['unit_id']??1);$poll=(int)($input['poll_seconds']??5);
@@ -70,6 +83,9 @@ try {
     }
  }
  switch ($action) {
+ case 'topology':
+    $labels=json_decode(setting('topology_labels','{}'),true);
+    jsonOut(['labels'=>is_array($labels)?$labels:[]]);
  case 'overview':
     $devices=q('SELECT d.*,s.failure_count FROM devices d LEFT JOIN collector_state s ON s.device_id=d.id ORDER BY d.id')->fetchAll();
     $latest=q('SELECT x.device_id,x.taken_at,x.simulated,x.values_json FROM samples x JOIN (SELECT device_id,MAX(id) id FROM samples GROUP BY device_id) m ON m.id=x.id')->fetchAll();

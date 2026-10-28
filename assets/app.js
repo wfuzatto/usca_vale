@@ -15,9 +15,19 @@ async function api(action,body=null,params={}){
   const res=await fetch('api.php?'+query,opt);if(res.status===401){location.href='login.php';throw Error('Autenticação encerrada')}
   const json=await res.json();if(!res.ok||json.error)throw Error(json.error||'Falha HTTP '+res.status);return json;
 }
-const navTo=page=>{state.page=page;document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id==='page-'+page));document.querySelectorAll('.sidenav button[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===page));const titles={overview:'Painel de supervisão',history:'Histórico de grandezas',events:'Investigação de alarmes',equipment:'Gestão de equipamentos',settings:'Administração'};$('pageTitle').textContent=titles[page];$('sidebar').classList.remove('open');if(page==='history')searchHistory();if(page==='events')searchEvents();if(page==='equipment'||page==='settings')loadAdmin();};
-document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>navTo(b.dataset.page)));
-document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>navTo(b.dataset.go)));
+const navTo=(page,scrollto=null,control=null)=>{
+ state.page=page;
+ document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id==='page-'+page));
+ document.querySelectorAll('.sidenav button[data-page]').forEach(el=>el.classList.toggle('active',el===(control||document.querySelector(`.sidenav button[data-page="${page}"]`))));
+ const titles={overview:'Dashboard',graphs:'Gráficos',history:'Histórico',events:'Eventos e Alarmes',equipment:'Equipamentos',settings:'Configurações',backup:'Backup',about:'Sobre'};
+ $('pageTitle').textContent=titles[page]||'USCA Vale';$('sidebar').classList.remove('open');
+ if(page==='history')searchHistory();if(page==='events')searchEvents();if(page==='equipment'||page==='settings')loadAdmin();
+ if(page==='overview')window.uscaRefreshCharts?.(state.overview,true);
+ if(scrollto){requestAnimationFrame(()=>{document.getElementById(scrollto)?.scrollIntoView({block:'start',behavior:'smooth'})})}
+ else window.scrollTo({top:0,behavior:'instant'});
+};
+document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>navTo(b.dataset.page,b.dataset.scrollto||null,b.closest('.sidenav')?b:null)));
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>navTo(b.dataset.go,b.dataset.scrollto||null)));
 $('menuToggle').onclick=()=>$('sidebar').classList.toggle('open');
 const sev=s=>({critical:'Crítica',warning:'Atenção',info:'Informação'})[s]||s;
 const source=s=>({polling:'Amostragem',controller:'DEIF',system:'Sistema',simulation:'Simulação'})[s]||s;
@@ -27,38 +37,10 @@ function alive(d){return d&&d.enabled&&!d.stale&&d.latest}
 function statusFrom(d,metric){if(!alive(d)||d.latest.values?.[metric]===undefined)return null;return !!d.latest.values[metric]}
 function availableMetric(d,k){return alive(d)&&typeof d.latest.values?.[k]==='number'?d.latest.values[k]:null}
 function renderOverview(data){
- state.overview=data;
- const devices=data.devices;const good=devices.filter(alive);const real=devices.filter(d=>d.enabled&&!Number(d.simulate));
- const active=data.active.filter(e=>e.severity!=='info');const mains=good.find(d=>d.latest?.values?.mains_available!==undefined);
- const current=good.find(d=>d.latest?.values?.power_kw!==undefined);
- const mainsStatus=mains?statusFrom(mains,'mains_available'):null;
- const mainsTxt=mainsStatus===null?'Indisponível':mainsStatus?'Normal':'FALHA';
- const p=current?availableMetric(current,'power_kw'):null;
- $('summaryCards').innerHTML=stat('Concessionária',mainsTxt,mainsStatus===null?'Sem leitura válida':mains?.name,mainsStatus===true?'good':mainsStatus===false?'bad':'')+
- stat('Potência monitorada',p===null?'—':num(p)+' kW',current?(current.simulate?'Fonte simulada':current.name):'Ponto não configurado')+
- stat('Eventos ativos',String(active.length),active.length?'Exigem atenção':'Nenhuma ocorrência pendente',active.length?'bad':'good')+
- stat('Equipamentos conectados',`${good.length} / ${devices.filter(d=>d.enabled).length}`,real.length+' dispositivos reais habilitados');
- $('collectorDot').classList.toggle('bad',good.length===0);$('collectorLabel').textContent=good.length?`${good.length} equipamento(s) atualizados`:'Coletor sem leitura recente';
- $('lastUpdated').textContent='Atualizado '+new Date().toLocaleTimeString('pt-BR');
- $('activeAlarms').innerHTML=data.active.length?data.active.slice(0,5).map(e=>`<div class="alarm ${esc(e.severity)}"><div><strong>${esc(e.message)}</strong><small>${esc(e.device)} · ${when(e.started_at)} · ${esc(source(e.source))}</small></div><span class="alarm-status">EM ABERTO</span></div>`).join(''):'<div class="empty-state">✓ Nenhum evento aberto.<br><small>Verifique se o coletor está funcionando.</small></div>';
- const sim=good.some(d=>Number(d.simulate));
- let mainNode=mains?mainsStatus:null;
- let generator=good.find(d=>d.latest?.values?.generator_running!==undefined);
- let genStatus=generator?statusFrom(generator,'generator_running'):null;
- let genSupply=generator?statusFrom(generator,'source_generator'):null;
- let gridValue=mainNode===null?'Sem leitura':mainNode?'Presente':'Ausente';
- let genValue=genStatus===null?'Sem leitura':genStatus?'Funcionando':'Desligado';
- let bus=genSupply===true?'Gerador':(mainNode===true?'Rede':'Indeterminado');
- $('unifilar').innerHTML=`<div class="node ${mainNode===null?'gray':mainNode?'green':'red'}"><span class="node-icon">♜</span><b>CONCESSIONÁRIA</b><small>${gridValue}</small></div><span class="line-arrow">→</span><div class="node ${bus==='Indeterminado'?'gray':'blue'}"><span class="node-icon">⊞</span><b>BARRAMENTO</b><small>${bus}</small></div><span class="line-arrow">←</span><div class="node ${genStatus===null?'gray':genStatus?'green':'gray'}"><span class="node-icon">⚙</span><b>GERADORES</b><small>${genValue}</small></div>`;
- // Do not leak stale readings as live values.
- const previous=$('metricDevice').value;
- const choices=devices.map(d=>`<option value="${d.id}">${esc(d.name)}${d.simulate?' [SIMULADO]':''}</option>`).join('');
- $('metricDevice').innerHTML=choices;
- $('metricDevice').value=devices.some(d=>String(d.id)===previous)?previous:String(good[0]?.id??devices[0]?.id??'');
- renderMetricGroups();
- if(sim){document.querySelector('.live-pill').textContent='● Ambiente com dados simulados';}else document.querySelector('.live-pill').innerHTML='<span class="pulse"></span> Atualização automática • 5 s';
+ if(typeof window.uscaVisualRenderOverview==='function')window.uscaVisualRenderOverview(data);
+ else state.overview=data;
 }
-function renderMetricGroups(){const d=state.overview?.devices?.find(d=>d.id===$('metricDevice').value);if(!d){$('metricGroups').innerHTML='<div class="empty-state">Nenhum dispositivo.</div>';return}
+function renderMetricGroups(){const d=state.overview?.devices?.find(d=>String(d.id)===$('metricDevice').value);if(!d){$('metricGroups').innerHTML='<div class="empty-state">Nenhum dispositivo.</div>';return}
  const catalog=state.overview.catalog||{};const vals=alive(d)?d.latest.values:{};
  let groups={};for(const [key,v] of Object.entries(catalog)){const val=vals[key];if(val===undefined||val===null)continue;const group=v[2];(groups[group]??=[]).push(`<div class="metric"><label>${esc(v[0])}</label><strong>${v[1]==='bool'?(val?'Ativo':'Inativo'):num(val,v[1]==='Hz'||v[1]===''?2:1)} <small>${esc(v[1]==='bool'?'':v[1])}</small></strong></div>`)}
  $('metricGroups').innerHTML=Object.entries(groups).map(([group,cards])=>`<h4>${esc(group)}</h4><div class="metric-grid">${cards.join('')}</div>`).join('')||'<div class="empty-state">Sem medições válidas. Verifique o coletor/mapeamento ou a idade dos dados.</div>';
@@ -122,9 +104,11 @@ $('saveRetention').onclick=async()=>{try{await api('set_retention',{days:Number(
 $('changePassword').onclick=async()=>{try{await api('change_password',{old_password:$('oldPass').value,new_password:$('newPass').value});$('oldPass').value='';$('newPass').value='';notice('Senha atualizada')}catch(e){notice(e.message,true)}};
 $('historySearch').onclick=searchHistory;$('eventSearch').onclick=searchEvents;$('exportEvents').onclick=csvExport;$('printHistory').onclick=()=>window.print();$('printEvents').onclick=()=>window.print();
 document.querySelectorAll('[data-hours]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-hours]').forEach(c=>c.classList.toggle('active',c===b));setPeriod('dateFrom','dateTo',Number(b.dataset.hours));searchHistory()});
-async function loadOverview(){try{const d=await api('overview');renderOverview(d);for(const id of ['historyDevice','eventDevice']) fillDeviceSelect($(id),false);
- // Default real-time graph on the chosen device without blocking the primary dashboard.
- const metricD=$('metricDevice').value;if(metricD&&state.page==='overview'){api('history',null,{device:metricD,metrics:'voltage_l12',from:new Date(Date.now()-7200000).toISOString().slice(0,19).replace('T',' '),to:new Date().toISOString().slice(0,19).replace('T',' ')}).then(v=>drawChart($('overviewChart'),v.rows,['voltage_l12'],v.bucket_seconds)).catch(()=>{});}
- }catch(e){notice('Não foi possível carregar a supervisão: '+e.message,true)}}
+async function loadOverview(){try{
+ const d=await api('overview');renderOverview(d);
+ for(const id of ['historyDevice','eventDevice']) fillDeviceSelect($(id),false);
+ if(state.page==='overview')window.uscaRefreshCharts?.(d);
+ }catch(e){notice('Não foi possível carregar a supervisão: '+e.message,true)}
+}
 function init(){setPeriod('dateFrom','dateTo',24);setPeriod('eventFrom','eventTo',24);loadOverview().then(buildMetricPicker);setInterval(()=>{if(!document.hidden)loadOverview()},5000);window.addEventListener('resize',()=>{if(state.historyData&&state.page==='history')drawChart($('historyChart'),state.historyData.rows,state.historyData.metrics,state.historyData.bucket_seconds)});}
 init();

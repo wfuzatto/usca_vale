@@ -87,3 +87,23 @@ O simulador repete aproximadamente a cada 5 minutos: operação normal, subtens�
 ## Estrutura
 
 `install.php` instala MariaDB/MySQL. `api.php` atende consultas autenticadas. `index.php` exibe o dashboard Bootstrap. `src/ModbusClient.php` contém o cliente somente leitura. `src/Collector.php` faz persistência, simulação, detecção e coleta. `bin/collect.php` executa o daemon. `bin/backup.php` executa backup. `scripts/` contém instaladores de serviço. `tests/` reúne testes locais de decodificação Modbus. `backups/` deve permanecer inacessível pela web.
+
+
+## Interface aprovada — painel v1.1
+
+O visual do painel principal foi reconstruído com base na imagem aprovada (1536 × 1024):
+barra superior azul-marinho, menu lateral à esquerda, quatro cartões de concessionária
+e geradores, unifilar conceitual, alarmes ativos, última comunicação, seis mini-gráficos
+e tabela de eventos recentes. A referência está em `docs/referencia-dashboard-aprovado.png`.
+
+- **Não são usados os valores da imagem como dados reais.** Campos indisponíveis ficam como `—`.
+- Cartões e diagrama mostram estado **apenas** se existem leituras válidas para ele.
+- A identificação `SIMULAÇÃO` permanece visível nos cartões simulados.
+- O botão **Editar Topologia** salva rótulos no banco `app_settings` e não envia comandos aos equipamentos.
+- Os gráficos do dashboard consultam a API `history`, com 5 min / 1 h / 24 h / 7 dias / 30 dias.
+- O novo CSS está em `assets/mockup-exato.css`; o JavaScript está em `assets/visual-dashboard.js`.
+- O menu **Backup** apresenta instruções; backup de verdade continua restrito ao script local `bin/backup.php`.
+
+Para atualizar uma instalação anterior: faça backup do código e banco, substitua os
+arquivos preservando `config.php`, atualize a página com Ctrl+F5 e verifique o serviço coletor.
+A atualização visual não altera as tabelas existentes.
