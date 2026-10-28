@@ -64,6 +64,7 @@ A implementação executa apenas leituras Modbus TCP **01/02/03/04**. Não ofere
 ```bash
 php -l api.php
 php tests/run.php
+php tests/modbus_tcp.php
 php bin/collect.php --once
 php bin/collect.php --once --phase=sag
 php bin/collect.php --once --phase=outage
