@@ -1,0 +1,59 @@
+CREATE TABLE IF NOT EXISTS users (
+ id INT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(80) NOT NULL UNIQUE,
+ password_hash VARCHAR(255) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS devices (
+ id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, role ENUM('mains','generator','controller','simulator') NOT NULL DEFAULT 'controller',
+ host VARCHAR(255) NOT NULL DEFAULT '', port INT NOT NULL DEFAULT 502, unit_id INT NOT NULL DEFAULT 1,
+ enabled TINYINT(1) NOT NULL DEFAULT 1, simulate TINYINT(1) NOT NULL DEFAULT 0,
+ rated_kva DECIMAL(12,2) NULL, poll_seconds INT NOT NULL DEFAULT 5,
+ last_seen DATETIME NULL, last_error VARCHAR(255) NULL,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mappings (
+ id INT AUTO_INCREMENT PRIMARY KEY, device_id INT NOT NULL, metric VARCHAR(64) NOT NULL,
+ fc TINYINT UNSIGNED NOT NULL DEFAULT 4, address INT UNSIGNED NOT NULL, words TINYINT NOT NULL DEFAULT 1,
+ value_type ENUM('u16','s16','u32','s32','bool') NOT NULL DEFAULT 'u16', scale_exp SMALLINT NOT NULL DEFAULT 0,
+ enabled TINYINT(1) NOT NULL DEFAULT 1, UNIQUE KEY uq_map (device_id, metric),
+ CONSTRAINT fk_map_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS samples (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY, device_id INT NOT NULL, taken_at DATETIME(3) NOT NULL,
+ simulated TINYINT(1) NOT NULL DEFAULT 0, values_json JSON NOT NULL,
+ INDEX idx_samples_device_time (device_id,taken_at),
+ CONSTRAINT fk_samples_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS events (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY, device_id INT NOT NULL, event_key VARCHAR(100) NOT NULL,
+ category VARCHAR(40) NOT NULL, severity ENUM('info','warning','critical') NOT NULL DEFAULT 'warning',
+ started_at DATETIME(3) NOT NULL, ended_at DATETIME(3) NULL,
+ minimum DECIMAL(18,4) NULL, maximum DECIMAL(18,4) NULL, observed DECIMAL(18,4) NULL,
+ message VARCHAR(255) NOT NULL, source ENUM('polling','controller','system','simulation') NOT NULL DEFAULT 'polling',
+ acknowledged_at DATETIME NULL, acknowledged_by INT NULL,
+ INDEX idx_events_period(started_at,ended_at), INDEX idx_events_open(device_id,event_key,ended_at),
+ CONSTRAINT fk_events_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS rules (
+ id INT AUTO_INCREMENT PRIMARY KEY, metric VARCHAR(64) NOT NULL, name VARCHAR(120) NOT NULL,
+ comparison ENUM('below','above') NOT NULL, threshold DECIMAL(16,5) NOT NULL,
+ hysteresis DECIMAL(16,5) NOT NULL DEFAULT 0, hold_seconds INT NOT NULL DEFAULT 5,
+ severity ENUM('warning','critical') NOT NULL DEFAULT 'warning', enabled TINYINT(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS rule_state (
+ device_id INT NOT NULL, rule_id INT NOT NULL, pending_at DATETIME(3) NULL,
+ event_id BIGINT NULL, PRIMARY KEY(device_id, rule_id),
+ FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE,
+ FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS collector_state (
+ device_id INT NOT NULL PRIMARY KEY, next_due_at DATETIME(3) NULL, last_attempt_at DATETIME(3) NULL,
+ failure_count INT NOT NULL DEFAULT 0, FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS app_settings (
+ name VARCHAR(100) NOT NULL PRIMARY KEY, value TEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS comm_logs (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY, device_id INT NOT NULL, at_utc DATETIME(3) NOT NULL,
+ success TINYINT(1) NOT NULL, detail VARCHAR(255) NOT NULL,
+ INDEX idx_comm_date(at_utc), FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

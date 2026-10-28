@@ -1,0 +1,4 @@
+Options -Indexes
+<FilesMatch "^(config\.php|config\.example\.php|README\.md|\.env|composer\..*)$">
+Require all denied
+</FilesMatch>
