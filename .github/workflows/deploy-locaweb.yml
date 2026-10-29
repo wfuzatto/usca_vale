@@ -1,0 +1,85 @@
+name: Publicar USCA Vale na Locaweb (FTPS)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simular sem enviar arquivos (desmarque para publicar)"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: usca-vale-locaweb
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Enviar somente arquivos publicaveis
+    if: ${{ vars.LOCAWEB_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Obter codigo do GitHub
+        uses: actions/checkout@v4
+
+      - name: Validar configuracao e pasta de destino
+        env:
+          FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
+          FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
+          FTP_DIR: ${{ vars.LOCAWEB_FTP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$FTP_HOST" || -z "$FTP_USER" || -z "$FTP_PASSWORD" ]]; then
+            echo "::error::Cadastre LOCAWEB_FTP_HOST, LOCAWEB_FTP_USER e LOCAWEB_FTP_PASSWORD em Settings > Secrets and variables > Actions > Secrets."
+            exit 1
+          fi
+          if [[ -z "$FTP_DIR" || "$FTP_DIR" == /* || "$FTP_DIR" == *..* || "$FTP_DIR" == *//* || "$FTP_DIR" == *[[:space:]]* || "$FTP_DIR" != */ ]]; then
+            echo "::error::LOCAWEB_FTP_DIR deve ser um caminho relativo, sem .., sem espacos e terminado em /. Ex.: public_html/usca_vale/."
+            exit 1
+          fi
+          case "$FTP_DIR" in
+            usca_vale/|*/usca_vale/) ;;
+            *) echo "::error::Por seguranca o destino deve ser uma pasta exclusiva usca_vale/, nunca a raiz de outros sites."; exit 1 ;;
+          esac
+
+      - name: Montar pacote PHP publico (sem banco, backups ou credenciais)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/assets deploy/src deploy/sql
+          cp index.php api.php login.php logout.php install.php .htaccess deploy/
+          cp -R assets/. deploy/assets/
+          cp -R src/. deploy/src/
+          cp sql/schema.sql sql/.htaccess deploy/sql/
+          test -f deploy/index.php
+          test -f deploy/src/bootstrap.php
+          test -f deploy/assets/visual-dashboard.js
+          test -f deploy/sql/schema.sql
+          if [[ -e deploy/config.php || -d deploy/backups || -d deploy/var || -d deploy/bin ]]; then
+            echo "::error::O pacote contem arquivos privados."
+            exit 1
+          fi
+          echo "Pacote publico preparado (sem config.php, logs, backups, testes ou coletor)."
+
+      - name: Enviar arquivos por FTPS (TLS obrigatorio)
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.LOCAWEB_FTP_HOST }}
+          username: ${{ secrets.LOCAWEB_FTP_USER }}
+          password: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./deploy/
+          server-dir: ${{ vars.LOCAWEB_FTP_DIR }}
+          dangerous-clean-slate: false
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          log-level: standard
