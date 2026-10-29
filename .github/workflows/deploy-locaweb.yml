@@ -1,13 +1,12 @@
-name: Publicar USCA Vale na Locaweb (FTPS)
+name: Publicar USCA Vale na Locaweb (SSH seguro)
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Simular sem enviar arquivos (desmarque para publicar)"
+        description: "Somente preparar e validar (sem upload)"
         required: true
         default: true
         type: boolean
@@ -21,15 +20,15 @@ concurrency:
 
 jobs:
   deploy:
-    name: Enviar somente arquivos publicaveis
+    name: Publicar arquivos via SSH/SCP
     if: ${{ vars.LOCAWEB_DEPLOY_ENABLED != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Obter codigo do GitHub
+      - name: Obter codigo-fonte
         uses: actions/checkout@v4
 
-      - name: Validar configuracao e pasta de destino
+      - name: Validar credenciais e caminho isolado
         env:
           FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
           FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
@@ -39,19 +38,20 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$FTP_HOST" || -z "$FTP_USER" || -z "$FTP_PASSWORD" ]]; then
-            echo "::error::Cadastre LOCAWEB_FTP_HOST, LOCAWEB_FTP_USER e LOCAWEB_FTP_PASSWORD em Settings > Secrets and variables > Actions > Secrets."
+            echo "::error::Configure os tres Secrets LOCAWEB_FTP_HOST, LOCAWEB_FTP_USER e LOCAWEB_FTP_PASSWORD."
             exit 1
           fi
-          if [[ -z "$FTP_DIR" || "$FTP_DIR" == /* || "$FTP_DIR" == *..* || "$FTP_DIR" == *//* || "$FTP_DIR" == *[[:space:]]* || "$FTP_DIR" != */ ]]; then
-            echo "::error::LOCAWEB_FTP_DIR deve ser um caminho relativo, sem .., sem espacos e terminado em /. Ex.: public_html/usca_vale/."
+          if [[ ! "$FTP_DIR" =~ ^[a-zA-Z0-9_./-]+/$ || "$FTP_DIR" == /* || "$FTP_DIR" == *..* || "$FTP_DIR" == *//* ]]; then
+            echo "::error::Caminho remoto invalido."
             exit 1
           fi
-          case "$FTP_DIR" in
-            usca_vale/|*/usca_vale/) ;;
-            *) echo "::error::Por seguranca o destino deve ser uma pasta exclusiva usca_vale/, nunca a raiz de outros sites."; exit 1 ;;
-          esac
+          if [[ "$FTP_DIR" != "public_html/usca_vale/" ]]; then
+            echo "::error::Destino diferente de public_html/usca_vale/; revisao manual obrigatoria."
+            exit 1
+          fi
+          echo "Destino permitido: public_html/usca_vale/. Outras pastas nao serao alteradas."
 
-      - name: Montar pacote PHP publico (sem banco, backups ou credenciais)
+      - name: Preparar somente os arquivos publicos
         shell: bash
         run: |
           set -euo pipefail
@@ -61,75 +61,47 @@ jobs:
           cp -R src/. deploy/src/
           cp sql/schema.sql sql/.htaccess deploy/sql/
           test -f deploy/index.php
-          test -f deploy/src/bootstrap.php
           test -f deploy/assets/visual-dashboard.js
-          test -f deploy/sql/schema.sql
-          if [[ -e deploy/config.php || -d deploy/backups || -d deploy/var || -d deploy/bin ]]; then
-            echo "::error::O pacote contem arquivos privados."
+          test -f deploy/.htaccess
+          test -f deploy/src/bootstrap.php
+          if [[ -f deploy/config.php || -d deploy/var || -d deploy/backups || -d deploy/bin ]]; then
+            echo "::error::Arquivo privado no pacote."
             exit 1
           fi
-          echo "Pacote publico preparado (sem config.php, logs, backups, testes ou coletor)."
+          echo "Pacote verificado. Sem config.php, backups, var ou coletor."
 
-      - name: Verificar disponibilidade SSH/SFTP sem usar credenciais
-        env:
-          FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if timeout 6 bash -c 'echo > /dev/tcp/"$1"/22' -- "$FTP_HOST" 2>/dev/null; then
-            echo "Porta TCP 22 aberta; avaliar habilitacao SSH e validar chave do servidor antes de autenticar."
-          else
-            echo "Porta TCP 22 indisponivel para este servidor. Habilite SSH no painel da hospedagem se suportado."
-          fi
-
-      - name: Identificar chave publica SSH (sem autenticar)
-        env:
-          FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh-keyscan -T 5 -p 22 "$FTP_HOST" 2>/dev/null | grep -E ' ssh-(rsa|ed25519) | ecdsa-' > /tmp/locaweb_hostkeys || true
-          if [[ -s /tmp/locaweb_hostkeys ]]; then
-            echo "Chave SSH publica identificada (fingerprint SHA256):"
-            ssh-keygen -lf /tmp/locaweb_hostkeys -E sha256 | sed -E 's/^([0-9]+) (SHA256:[A-Za-z0-9+\/]+=*).*/\1 \2/'
-          else
-            echo "Nenhuma chave SSH obtida; acesso SFTP ainda nao demonstrado."
-          fi
-
-      - name: Testar login SFTP criptografado (sem alterar arquivos)
+      - name: Publicar com SSH/SCP (porta 22, host key fixada)
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         env:
           FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
           FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
           FTP_PASSWORD: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
+          FTP_DIR: ${{ vars.LOCAWEB_FTP_DIR || 'public_html/usca_vale/' }}
         shell: bash
         run: |
           set -euo pipefail
-          ssh-keyscan -T 7 -p 22 -t ed25519 "$FTP_HOST" 2>/dev/null > /tmp/locaweb_known_hosts
+          ssh-keyscan -T 8 -t ed25519 -p 22 "$FTP_HOST" 2>/dev/null > /tmp/locaweb_known_hosts
           test -s /tmp/locaweb_known_hosts
           fingerprint="$(ssh-keygen -lf /tmp/locaweb_known_hosts -E sha256 | awk '{print $2}')"
           if [[ "$fingerprint" != "SHA256:PECk31ESSziOS6VSdwooBFs9djNEEUKy6wUBbpPok50" ]]; then
-            echo "::error::A identidade SSH do host mudou; interrompendo por seguranca."
+            echo "::error::Host SSH nao corresponde a identidade previamente observada. Upload cancelado."
             exit 1
           fi
           sudo apt-get update -qq >/dev/null
           sudo apt-get install -y -qq sshpass >/dev/null
           export SSHPASS="$FTP_PASSWORD"
-          { echo pwd; echo 'ls -ld public_html'; echo bye; } | timeout 20 sshpass -e sftp -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -P 22 "$FTP_USER@$FTP_HOST"
-          echo "Verificando via SSH a pasta de publicacao:"
-          timeout 20 sshpass -e ssh -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -oConnectTimeout=8 -p 22 "$FTP_USER@$FTP_HOST" 'test -d public_html && printf "Pasta public_html existente\\n"'
-          echo "Login SFTP seguro verificado (nenhum upload realizado)."
+          SSH_OPTS=(-oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -oConnectTimeout=10)
+          timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "test -d public_html && mkdir -p -- '$FTP_DIR'"
+          timeout 180 sshpass -e scp -r "${SSH_OPTS[@]}" -P 22 ./deploy/. "$FTP_USER@$FTP_HOST:$FTP_DIR"
+          local_sha="$(sha256sum deploy/index.php | awk '{print $1}')"
+          remote_sha="$(timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "sha256sum '$FTP_DIR/index.php' | awk '{print \\$1}'")"
+          if [[ "$local_sha" != "$remote_sha" ]]; then
+            echo "::error::Falha de verificacao do arquivo index.php no servidor remoto."
+            exit 1
+          fi
+          echo "PUBLICADO: public_html/usca_vale/ - arquivo index.php conferido via SHA-256."
+          echo "Somente frontend/backend web. Banco de dados e coletor Modbus continuam separados."
 
-      - name: Enviar arquivos por FTPS (TLS obrigatorio)
-        if: false # FTPS rejeitado pelo servidor (500 AUTH); nunca reenviar senha via FTP plano
-        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
-        with:
-          server: ${{ secrets.LOCAWEB_FTP_HOST }}
-          username: ${{ secrets.LOCAWEB_FTP_USER }}
-          password: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: ./deploy/
-          server-dir: ${{ vars.LOCAWEB_FTP_DIR || 'public_html/usca_vale/' }}
-          dangerous-clean-slate: false
-          dry-run: true
-          log-level: standard
+      - name: Resumo do modo simulacao de deploy
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: echo "Simulacao concluida sem alterar a hospedagem."
