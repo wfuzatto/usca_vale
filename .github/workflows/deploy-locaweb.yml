@@ -22,7 +22,7 @@ concurrency:
 jobs:
   deploy:
     name: Enviar somente arquivos publicaveis
-    if: ${{ vars.LOCAWEB_DEPLOY_ENABLED == 'true' }}
+    if: ${{ vars.LOCAWEB_DEPLOY_ENABLED != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -34,7 +34,7 @@ jobs:
           FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
           FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
           FTP_PASSWORD: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
-          FTP_DIR: ${{ vars.LOCAWEB_FTP_DIR }}
+          FTP_DIR: ${{ vars.LOCAWEB_FTP_DIR || 'public_html/usca_vale/' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,7 +79,7 @@ jobs:
           protocol: ftps
           port: 21
           local-dir: ./deploy/
-          server-dir: ${{ vars.LOCAWEB_FTP_DIR }}
+          server-dir: ${{ vars.LOCAWEB_FTP_DIR || 'public_html/usca_vale/' }}
           dangerous-clean-slate: false
-          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          dry-run: true
           log-level: standard
