@@ -122,11 +122,28 @@ jobs:
             exit 1
           fi
           if grep -Eiq '^(index[.]php|[.]htaccess|api[.]php|login[.]php|logout[.]php|install[.]php|assets|src|sql)[[:space:]]*$' "$audit_log"; then
-            echo '::error::Raiz ja contem arquivos/pastas com nomes usados pelo USCA Vale. Para evitar sobrescrever outro site, upload interrompido.'
-            echo 'Confira e faca backup dos arquivos existentes no WebFTP antes de substituir.'
-            exit 1
+            echo 'Arquivos existentes encontrados; verificando se a raiz ja pertence ao USCA Vale.'
+            check_dir="$(mktemp -d)"
+            {
+              echo "get public_html/index.php $check_dir/index.php"
+              echo "get public_html/api.php $check_dir/api.php"
+              echo "get public_html/.htaccess $check_dir/.htaccess"
+              echo bye
+            } | timeout 45 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST"
+            if [[ ! -s "$check_dir/index.php" || ! -s "$check_dir/api.php" || ! -s "$check_dir/.htaccess" ]]; then
+              echo '::error::Arquivos preexistentes nao puderam ser identificados. Upload cancelado.'
+              exit 1
+            fi
+            if ! grep -q 'USCA Vale | Centro de Monitoramento' "$check_dir/index.php" ||
+               ! grep -q 'src/bootstrap.php' "$check_dir/index.php" ||
+               ! grep -q 'requireAuth();' "$check_dir/api.php" ||
+               ! grep -Fq 'Require all denied' "$check_dir/.htaccess"; then
+              echo '::error::A raiz contem uma aplicacao diferente do USCA Vale. Upload cancelado para evitar sobrescrever outro site.'
+              exit 1
+            fi
+            echo 'Aplicacao USCA Vale ja existente na raiz, atualizacao permitida sem apagar outras pastas.'
           fi
-          echo 'Raiz publica auditada sem colisoes conhecidas. Iniciando transferencia...'
+          echo 'Auditoria da raiz concluida. Iniciando transferencia...'
           timeout 180 sshpass -e scp -r "${SSH_OPTS[@]}" -P 22 ./deploy/. "$FTP_USER@$FTP_HOST:$FTP_DIR"
           # Baixe amostras do destino e compare byte a byte: o shell SSH e restrito.
           verify_dir="$(mktemp -d)"
