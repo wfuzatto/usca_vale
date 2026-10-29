@@ -57,11 +57,11 @@ async function searchHistory(){try{
  const data=await api('history',null,{device,metrics:metrics.join(','),...queryPeriod('dateFrom','dateTo')});state.historyData=data;
  $('historySubtitle').textContent=`${data.rows.length} pontos agregados`; $('bucketInfo').textContent=`Amostras por ${data.bucket_seconds} s`;
  $('historyLegend').innerHTML=metrics.map((key,i)=>`<span><i style="background:${COLORS[i%COLORS.length]}"></i>${esc(state.overview.catalog[key][0])}</span>`).join('');
- drawChart($('historyChart'),data.rows,metrics,data.bucket_seconds);
+ drawChart($('historyChart'),data.rows,metrics,data.bucket_seconds,data.poll_seconds);
  const ev=await api('events',null,{device,...queryPeriod('dateFrom','dateTo')});$('historyEvents').innerHTML=miniEventTable(ev.rows.slice(0,15));
  }catch(e){notice(e.message,true)}}
 function miniEventTable(rows){return rows.length?`<div class="table-responsive"><table class="table-custom"><thead><tr><th>Horário</th><th>Equipamento</th><th>Evento</th><th>Severidade</th></tr></thead><tbody>${rows.map(e=>`<tr><td>${when(e.started_at)}</td><td>${esc(e.device)}</td><td>${esc(e.message)}</td><td>${badge(e.severity)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-state">Nenhum evento encontrado no intervalo</div>'}
-function drawChart(canvas,rows,series,bucket){const box=canvas.getBoundingClientRect();const w=Math.max(360,box.width||800),h=Math.max(180,box.height||240),dpr=window.devicePixelRatio||1;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
+function drawChart(canvas,rows,series,bucket,pollSeconds){const box=canvas.getBoundingClientRect();const w=Math.max(360,box.width||800),h=Math.max(180,box.height||240),dpr=window.devicePixelRatio||1;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
  ctx.clearRect(0,0,w,h);const L=68,R=20,T=19,B=38;const pw=w-L-R,ph=h-T-B;
  const points=rows.map(r=>({ts:Date.parse(r.bucket),...r}));const vals=points.flatMap(r=>series.map(key=>r[key]===null?null:Number(r[key]))).filter(v=>v!==null&&Number.isFinite(v));
  if(!vals.length){ctx.fillStyle='#93a1af';ctx.textAlign='center';ctx.fillText('Sem dados para o período selecionado',w/2,h/2);window.USCAChartHover?.attach(canvas,{rows:[],series:[]});return}
@@ -71,7 +71,17 @@ function drawChart(canvas,rows,series,bucket){const box=canvas.getBoundingClient
  ctx.font='11px "Segoe UI",sans-serif';ctx.textAlign='right';ctx.lineWidth=1;
  for(let i=0;i<=4;i++){const yy=T+ph*i/4;ctx.strokeStyle='#edf2f8';ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(w-R,yy);ctx.stroke();ctx.fillStyle='#90a2b4';ctx.fillText(num(ymax-(ymax-ymin)*i/4,1),L-12,yy+4)}
  ctx.textAlign='center';for(let i=0;i<=4;i++){const tt=tmin+(tmax-tmin)*i/4;const xx=L+pw*i/4;ctx.fillStyle='#8ba0b4';ctx.fillText(new Date(tt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),xx,h-11)}
- series.forEach((key,index)=>{ctx.lineWidth=2.4;ctx.strokeStyle=COLORS[index%COLORS.length];ctx.beginPath();let previous=null;for(const p of points){const val=p[key]===null?null:Number(p[key]);if(val===null||!Number.isFinite(val)){previous=null;continue}const xx=x(p.ts),yy=y(val);if(previous!==null&&p.ts-previous<=bucket*2500){ctx.lineTo(xx,yy)}else ctx.moveTo(xx,yy);previous=p.ts}ctx.stroke()});
+ series.forEach((key,index)=>{ctx.lineWidth=2.4;ctx.strokeStyle=COLORS[index%COLORS.length];ctx.beginPath();let previous=null;for(const p of points){const val=p[key]===null?null:Number(p[key]);if(val===null||!Number.isFinite(val)){previous=null;continue}const xx=x(p.ts),yy=y(val);if(previous!==null&&window.USCAChartSeries.joins(previous,p.ts,bucket,pollSeconds)){ctx.lineTo(xx,yy)}else ctx.moveTo(xx,yy);previous=p.ts}ctx.stroke();
+ // Make isolated samples visible without interpolating a communication gap.
+ let prevPoint=null;
+ for(let i=0;i<points.length;i++){
+  const p=points[i],n=p[key];
+  if(n===null||n===undefined||!Number.isFinite(Number(n))){prevPoint=null;continue}
+  const next=points[i+1],connectPrev=prevPoint!==null&&window.USCAChartSeries.joins(prevPoint,p.ts,bucket,pollSeconds);
+  const connectNext=next&&next[key]!==null&&next[key]!==undefined&&Number.isFinite(Number(next[key]))&&window.USCAChartSeries.joins(p.ts,next.ts,bucket,pollSeconds);
+  if(!connectPrev&&!connectNext){ctx.beginPath();ctx.arc(x(p.ts),y(Number(n)),3.2,0,Math.PI*2);ctx.fillStyle=COLORS[index%COLORS.length];ctx.fill()}
+  prevPoint=p.ts;
+ }});
  window.USCAChartHover?.attach(canvas,{
   rows:points,
   series:series.map((key,index)=>({
@@ -119,5 +129,5 @@ async function loadOverview(){try{
  if(state.page==='overview')window.uscaRefreshCharts?.(d);
  }catch(e){notice('Não foi possível carregar a supervisão: '+e.message,true)}
 }
-function init(){setPeriod('dateFrom','dateTo',24);setPeriod('eventFrom','eventTo',24);loadOverview().then(buildMetricPicker);setInterval(()=>{if(!document.hidden)loadOverview()},5000);window.addEventListener('resize',()=>{if(state.historyData&&state.page==='history')drawChart($('historyChart'),state.historyData.rows,state.historyData.metrics,state.historyData.bucket_seconds)});}
+function init(){setPeriod('dateFrom','dateTo',24);setPeriod('eventFrom','eventTo',24);loadOverview().then(buildMetricPicker);setInterval(()=>{if(!document.hidden)loadOverview()},5000);window.addEventListener('resize',()=>{if(state.historyData&&state.page==='history')drawChart($('historyChart'),state.historyData.rows,state.historyData.metrics,state.historyData.bucket_seconds,state.historyData.poll_seconds)});}
 init();

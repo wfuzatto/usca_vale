@@ -85,6 +85,28 @@
     const text=txt(label.length>19?label.slice(0,19):label),width=Math.max(57,Math.min(126,Math.round(label.length*6.4+18)));
     return `<rect class="state-block ${color}" x="${x-width/2}" y="${y}" rx="3" width="${width}" height="19"/><text class="state-label" x="${x}" y="${y+13}" text-anchor="middle">${text}</text>`;
   }
+  // Three phases are shown from the MAINS controller: M and BB are distinct.
+  // This is electrical metering detail, not a claim about physical cabling.
+  function phaseMeasurements(data){
+    const main=getMain(data.devices||[]);
+    const defs=[
+      {phase:'L1',pair:'L1-L2',m:'mains_voltage_l12',bb:'bus_voltage_l12',n:'voltage_l1n',i:'current_l1'},
+      {phase:'L2',pair:'L2-L3',m:'mains_voltage_l23',bb:'bus_voltage_l23',n:'voltage_l2n',i:'current_l2'},
+      {phase:'L3',pair:'L3-L1',m:'mains_voltage_l31',bb:'bus_voltage_l31',n:'voltage_l3n',i:'current_l3'}
+    ];
+    const rows=defs.map(p=>'<tr><th scope="row"><span class="phase-strip '+p.phase.toLowerCase()+'"></span>'+txt(p.phase)+' · '+txt(p.pair)+'</th>'+
+      '<td>'+txt(reading(firstValue(main,[p.m]),'V',1))+'</td>'+
+      '<td>'+txt(reading(firstValue(main,[p.n]),'V',1))+'</td>'+
+      '<td>'+txt(reading(firstValue(main,[p.i]),'A',0))+'</td>'+
+      '<td>'+txt(reading(firstValue(main,[p.bb]),'V',1))+'</td></tr>').join('');
+    $('phaseMeasurements').innerHTML='<div class="phase-summary-head"><strong>Grandezas trifásicas medidas</strong><span>Rede M: '+
+      txt(reading(firstValue(main,['mains_frequency']),'Hz',2))+' · Barramento BB: '+
+      txt(reading(firstValue(main,['bus_frequency']),'Hz',2))+'</span></div>'+
+      '<div class="phase-table-scroll"><table class="phase-table"><thead><tr><th>Fase / par</th>'+
+      '<th>Rede M (L-L)</th><th>Rede M (L-N)</th><th>Corrente M</th><th>Barramento BB (L-L)</th></tr></thead>'+
+      '<tbody>'+rows+'</tbody></table></div>'+
+      '<div class="phase-summary-note">Somente leituras do controlador MAINS, não dos geradores. O unifilar é conceitual: ligações, transformadores e disjuntores devem ser conferidos com o projeto elétrico.</div>';
+  }
   function diagram(data){
     const dev=data.devices,main=getMain(dev),gens=getGenerators(dev);
     const sourceState=bit(main,'mains_available'),mainBreaker=bit(main,'mains_breaker'),tieBreaker=bit(main,'tie_breaker');
@@ -129,6 +151,7 @@
       ${statusPill(605,231,supply?'ALIMENTADAS':'NÃO CONFIRMADO',supply?'green':'grey')}
     </svg>`;
     $('unifilar').innerHTML=html;
+    phaseMeasurements(data);
   }
   window.uscaVisualRenderOverview=function(data){
     state.overview=data;
@@ -148,7 +171,7 @@
     renderMetricGroups();
   };
   function hourText(n){return new Date(n).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})}
-  function chart(canvas,rows,defs,bucket){
+  function chart(canvas,rows,defs,bucket,pollSeconds){
     const bounds=canvas.getBoundingClientRect(),w=Math.max(80,bounds.width||260),h=Math.max(100,bounds.height||105),dpr=Math.min(2,window.devicePixelRatio||1);
     canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);
     const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
@@ -174,8 +197,17 @@
       ctx.strokeStyle=d.color;ctx.lineWidth=1.9;ctx.lineJoin='round';ctx.beginPath();let prior=null;
       rows.forEach((r,i)=>{
         const n=r[d.key];if(n===null||n===undefined||!Number.isFinite(Number(n))){prior=null;return}
-        const xx=x(ts[i]),yy=y(Number(n));if(prior!==null&&ts[i]-prior<=bucket*2600)ctx.lineTo(xx,yy);else ctx.moveTo(xx,yy);prior=ts[i];
+        const xx=x(ts[i]),yy=y(Number(n));if(prior!==null&&window.USCAChartSeries.joins(prior,ts[i],bucket,pollSeconds))ctx.lineTo(xx,yy);else ctx.moveTo(xx,yy);prior=ts[i];
       });ctx.stroke();
+      // Isolated samples must render as dots, not invisible canvas moveTo().
+      let prev=null;
+      rows.forEach((r,i)=>{
+        const v=r[d.key];if(v===null||v===undefined||!Number.isFinite(Number(v))){prev=null;return}
+        const next=rows[i+1],left=prev!==null&&window.USCAChartSeries.joins(prev,ts[i],bucket,pollSeconds);
+        const right=next&&next[d.key]!==null&&next[d.key]!==undefined&&Number.isFinite(Number(next[d.key]))&&window.USCAChartSeries.joins(ts[i],ts[i+1],bucket,pollSeconds);
+        if(!left&&!right){ctx.beginPath();ctx.arc(x(ts[i]),y(Number(v)),2.9,0,Math.PI*2);ctx.fillStyle=d.color;ctx.fill()}
+        prev=ts[i];
+      });
     });
     window.USCAChartHover?.attach(canvas,{
       rows:rows.map((r,i)=>({...r,ts:ts[i]})),
@@ -191,7 +223,7 @@
     const displayRows=scaled?rows.map(r=>({...r,...Object.fromEntries(g.keys.map(k=>[k,r[k]===null||r[k]===undefined?null:Number(r[k])/1000]))})):rows;
     if(g.title)el.parentElement.querySelector('h3').textContent=`${g.title} (${scaled?engineeringUnit(g.unit):g.unit})`;
     const displayUnit=scaled?engineeringUnit(g.unit):(g.unit||'');
-    const found=chart(el,displayRows,all.map(s=>({...s,unit:displayUnit})),vState.chartData.bucket_seconds);
+    const found=chart(el,displayRows,all.map(s=>({...s,unit:displayUnit})),vState.chartData.bucket_seconds,vState.chartData.poll_seconds);
     legend.innerHTML=found.map(s=>`<span class="chart-legend-item"><i class="chart-legend-line" style="background:${s.color}"></i>${txt(s.label)}</span>`).join('');
   }}
   window.uscaRefreshCharts=async function(data,force=false){

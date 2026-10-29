@@ -74,12 +74,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for js in assets/chart-hover.js assets/app.js assets/visual-dashboard.js; do
+          for js in assets/chart-series.js assets/chart-hover.js assets/app.js assets/visual-dashboard.js; do
             node --check "$js"
           done
           node tests/chart_hover_contract.cjs
+          node tests/chart_series_contract.cjs
+          node tests/dashboard_phase_contract.cjs
           if command -v php >/dev/null 2>&1; then
             php -l index.php
+            php -l api.php
             php -l install.php
             php tests/installer_contract.php
           else

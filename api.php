@@ -124,7 +124,8 @@ try {
     $sql='SELECT FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(taken_at)/'.$bucket.')*'.$bucket.') AS bucket,'.implode(',',$cols).',COUNT(*) AS readings FROM samples WHERE taken_at>=? AND taken_at<=?'.$filter.' GROUP BY bucket ORDER BY bucket LIMIT 550';
     $rows=q($sql,$params)->fetchAll();
     foreach($rows as &$r) $r['bucket'].='Z';unset($r);
-    jsonOut(['rows'=>$rows,'metrics'=>$metrics,'bucket_seconds'=>$bucket,'from'=>$from.'Z','to'=>$to.'Z','count'=>count($rows),'invalid_data_before'=>$cutoffs]);
+    $pollSeconds=$device>0?(int)q('SELECT poll_seconds FROM devices WHERE id=?',[$device])->fetchColumn():null;
+    jsonOut(['rows'=>$rows,'metrics'=>$metrics,'bucket_seconds'=>$bucket,'poll_seconds'=>$pollSeconds,'from'=>$from.'Z','to'=>$to.'Z','count'=>count($rows),'invalid_data_before'=>$cutoffs]);
  case 'events':
     $from=mustDate($_GET['from']??null,gmdate('Y-m-d H:i:s',time()-86400));$to=mustDate($_GET['to']??null,gmdate('Y-m-d H:i:s'));
     $device=(int)($_GET['device']??0);$severity=(string)($_GET['severity']??'');
