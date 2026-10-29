@@ -57,7 +57,7 @@ function applyMainsLocalProfile(int $deviceId, bool $replace): array {
       }
       $current=[];
       foreach($existing as $m){$current[$m['metric']]=[(int)$m['fc'],(int)$m['address'],(int)$m['words'],$m['value_type'],(int)$m['scale_exp'],(int)$m['enabled']];}
-      $same=($current===$target && ($savedId['id']??'')===$p['id'] && $device['role']==='mains');
+      $same=($current==$target && ($savedId['id']??'')===$p['id'] && $device['role']==='mains');
       if($same){
           $db->commit();
           return ['ok'=>true,'already_applied'=>true,'mappings'=>count($p['mappings']),'profile'=>$p['id']];
