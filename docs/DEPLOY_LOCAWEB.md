@@ -1,40 +1,23 @@
-# Deploy automático do USCA Vale na Locaweb
+# Publicação do USCA Vale na raiz pública da Locaweb
 
-Este fluxo publica **somente arquivos PHP da aplicação e assets**. Não é migração do coletor Modbus nem do MySQL local; a Locaweb não conseguirá acessar uma USCA privada sem uma arquitetura de coleta apropriada.
+## Destino efetivo
 
-## Ativar com segurança
+O site é publicado **diretamente em `public_html/`**, a raiz pública do domínio, **não** em `/home/...` nem `public_html/usca_vale/`. O deploy é feito por **SSH/SFTP/SCP na porta 22**; este servidor rejeitou FTPS explícito na porta 21.
 
-1. No painel Locaweb, abra **Hospedagem de Sites > Administrar > Arquivos e FTP**. Copie o **Host FTP** (ou alternativo, se DNS ainda não aponta), **Usuário FTP** e confirme a **porta**. O IP compartilhado e a pasta `/home/...` não substituem esses campos. Priorize FTPS explícito (TLS) em porta 21; se esta hospedagem não suportar FTPS, não habilite FTP inseguro sem avaliar a alternativa SFTP/SSH.
-2. Abra [Secrets and variables > Actions](https://github.com/wfuzatto/usca_vale/settings/secrets/actions). Em **Secrets**, cadastre:
-   - `LOCAWEB_FTP_HOST`: host FTP informado pela Locaweb.
-   - `LOCAWEB_FTP_USER`: usuário FTP da hospedagem.
-   - `LOCAWEB_FTP_PASSWORD`: senha FTP (não publicar no código, issue, commit ou chat).
-3. Na aba **Variables**, crie:
-   - `LOCAWEB_FTP_DIR`: pasta **vista a partir da raiz da sessão FTP**, terminada em `/usca_vale/`. Por exemplo, `public_html/usca_vale/` **se** o FTP começar na raiz da conta. Se o FTP já abrir dentro de `public_html`, use `usca_vale/`. Confirme isso antes usando o gerenciador WebFTP/FileZilla. NÃO use `/home/valedamantiqueir1/`.
-   - `LOCAWEB_DEPLOY_ENABLED`: `true` para liberar publicação. Ausente ou `false` deixa o workflow desativado.
-4. Em **Actions > Publicar USCA Vale na Locaweb (FTPS) > Run workflow**, mantenha marcada a opção **Simular sem enviar arquivos** para analisar o destino e os arquivos que seriam enviados. Após revisar, execute novamente com a opção desmarcada.
-5. Depois de habilitado, cada novo `push` na branch `main` publica automaticamente os arquivos pelo FTPS.
+- O workflow atualmente define `FTP_DIR: public_html/` diretamente, prevalecendo sobre a variável de repositório `LOCAWEB_FTP_DIR`. Para evitar confusão, atualize o valor dessa variável em **Settings > Secrets and variables > Actions > Variables** para `public_html/`, ou exclua a variável obsoleta.
+- `LOCAWEB_DEPLOY_ENABLED` precisa ser `true` ou estar ausente. Use `false` para suspender os envios.
+- Credenciais continuam em GitHub Actions Secrets: `LOCAWEB_FTP_HOST`, `LOCAWEB_FTP_USER`, `LOCAWEB_FTP_PASSWORD`; nunca envie senhas em commits.
 
-## Proteção
+[Workflow](../.github/workflows/deploy-locaweb.yml) • [GitHub Actions](https://github.com/wfuzatto/usca_vale/actions)
 
-- O job valida que o destino é exclusivamente uma pasta `usca_vale/`; impede deploy na raiz da hospedagem.
-- Faz pacote com lista de arquivos permitidos. **Não inclui** `config.php`, `config.example.php`, `backups/`, `var/`, `bin/`, `scripts/`, `tests/`, `profiles/`, documentação ou segredos.
-- Não ativa **dangerous-clean-slate**. Ao publicar em pasta existente, faça backup antes do primeiro deploy; o sincronizador pode atualizar ou remover arquivos que rastrear.
-- Não grava ou altera credenciais FTP no repositório. A senha deve ficar apenas como GitHub Actions Secret.
-- Um estado de sincronização é armazenado na pasta publicada como `.ftp-deploy-sync-state.json`; o `.htaccess` da aplicação nega acesso HTTP a ele.
-- A pasta `sql/` está protegida por `.htaccess` mas contém o esquema necessário ao instalador. Confirme que o Apache da hospedagem honra essas regras.
+## Proteção para os demais sites
 
-## Limitações da hospedagem
+Antes da transferência, o workflow lista a raiz pelo SFTP. Se houver arquivos e pastas com nomes utilizados pelo USCA Vale (`index.php`, `api.php`, `.htaccess`, `assets/`, `src/`, `sql/` etc.), lê e valida os arquivos principais existentes para **confirmar que pertencem ao USCA Vale**. Se não confirmados, interrompe a publicação sem sobrescrever outro site. O deploy faz upload de uma lista permitida de PHP, CSS, JS, arquivos necessários e `.htaccess`, **não remove** arquivos remotos e **não envia** `config.php`, logs ou backups. Após o upload, baixa e compara três arquivos byte a byte.
 
-- O instalador atual foi criado para XAMPP e tenta criar banco `usca_vale`. Na Locaweb, normalmente o banco precisa ser provisionado no painel e pode ter nome/usuário próprios; não execute o instalador sem adaptar esse passo.
-- O servidor web na Locaweb, por si só, **não pode consultar a USCA numa LAN privada**. Deixe o coletor rodando em equipamento local energizado, e planeje sincronização segura dos dados por HTTPS ao banco/API remota (sem abrir o Modbus TCP à internet).
-- A Locaweb limita cron de hospedagem compartilhada; não conte com um processo coletor PHP permanente na hospedagem.
-- O endereço web final depende do domínio apontado para a pasta `public_html` e de onde a pasta `usca_vale` foi criada. Verifique pelo WebFTP.
+Foi confirmada uma cópia anterior do próprio USCA Vale em `public_html/` e o deploy posterior nessa raiz concluiu com sucesso. A cópia antiga em `public_html/usca_vale/` foi preservada; o workflow **não a remove**.
 
-## Diagnóstico de erros
+## Banco de dados e coleta
 
-- **Host unreachable / credenciais inválidas**: confira o host FTP e login em Arquivos e FTP.
-- **TLS error**: confirme FTPS explícito disponível. Não desative a validação de certificado; avalie SFTP.
-- **550 / acesso negado**: confirme a pasta relativa correta e permissões da conta FTP.
-- **Job skipped**: defina `LOCAWEB_DEPLOY_ENABLED=true` nas Variables, após configurar Secrets e diretório.
-- **Site sem dados**: o deploy FTP não sincroniza o banco local e não inicia o coletor local.
+A transferência é apenas dos arquivos da aplicação. Não transfere MySQL, amostras nem executa Modbus na hospedagem. No instalador web, informe host, porta, nome do banco, usuário e senha **específicos da Locaweb**, criando previamente um banco pelo painel se o usuário não tiver permissão `CREATE DATABASE`. A USCA na rede privada precisa de um coletor local e de uma sincronização segura, caso o dashboard remoto deva apresentar dados reais.
+
+O arquivo `config.php` é específico do ambiente e nunca faz parte do pacote. Depois da instalação, confira as proteções HTTP desse arquivo, feche o acesso público ao instalador e garanta backups e acesso somente via HTTPS.
