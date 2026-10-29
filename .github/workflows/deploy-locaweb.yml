@@ -115,6 +115,8 @@ jobs:
           sudo apt-get install -y -qq sshpass >/dev/null
           export SSHPASS="$FTP_PASSWORD"
           { echo pwd; echo 'ls -ld public_html'; echo bye; } | timeout 20 sshpass -e sftp -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -P 22 "$FTP_USER@$FTP_HOST"
+          echo "Verificando via SSH a pasta de publicacao:"
+          timeout 20 sshpass -e ssh -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -oConnectTimeout=8 -p 22 "$FTP_USER@$FTP_HOST" 'test -d public_html && printf "Pasta public_html existente\\n"'
           echo "Login SFTP seguro verificado (nenhum upload realizado)."
 
       - name: Enviar arquivos por FTPS (TLS obrigatorio)
