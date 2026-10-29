@@ -2,6 +2,12 @@
 declare(strict_types=1);
 require_once __DIR__.'/src/bootstrap.php';
 startSession();
+/** Aceita nomes de hosts MySQL gerenciados que contenham underscore no subdominio.
+ * Mantem fora caracteres especiais de DSN, espacos e portas embutidas.
+ */
+function validDbHost(string $host): bool {
+    return (bool)preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.\\-]{0,252}$/D', $host);
+}
 if (is_file(__DIR__.'/config.php')) {
     try { if (db()->query('SELECT COUNT(*) FROM users')->fetchColumn()>0) {header('Location: index.php');exit;} } catch(Throwable $e) {}
 }
@@ -18,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     $ip=trim((string)($_POST['ip']??''));
     $port=(int)($_POST['port']??502);
     $admin=(string)($_POST['password']??'');
-    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9.\-]{0,252}$/D',$host)) throw new RuntimeException('Servidor do banco inválido');
+    if (!validDbHost($host)) throw new RuntimeException('Servidor do banco inválido');
     if ($dbport<1||$dbport>65535) throw new RuntimeException('Porta do MySQL inválida');
     if (!preg_match('/^[a-zA-Z0-9_]{1,64}$/D',$dbname)) throw new RuntimeException('Nome do banco inválido (use letras, números e _; máximo 64 caracteres)');
     if ($user===''||strlen($user)>128) throw new RuntimeException('Informe o usuário do MySQL');
