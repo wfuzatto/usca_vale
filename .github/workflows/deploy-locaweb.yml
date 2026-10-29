@@ -82,6 +82,20 @@ jobs:
             echo "Porta TCP 22 indisponivel para este servidor. Habilite SSH no painel da hospedagem se suportado."
           fi
 
+      - name: Identificar chave publica SSH (sem autenticar)
+        env:
+          FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh-keyscan -T 5 -p 22 "$FTP_HOST" 2>/dev/null | grep -E ' ssh-(rsa|ed25519) | ecdsa-' > /tmp/locaweb_hostkeys || true
+          if [[ -s /tmp/locaweb_hostkeys ]]; then
+            echo "Chave SSH publica identificada (fingerprint SHA256):"
+            ssh-keygen -lf /tmp/locaweb_hostkeys -E sha256 | sed -E 's/^([0-9]+) (SHA256:[A-Za-z0-9+\/]+=*).*/\1 \2/'
+          else
+            echo "Nenhuma chave SSH obtida; acesso SFTP ainda nao demonstrado."
+          fi
+
       - name: Enviar arquivos por FTPS (TLS obrigatorio)
         if: false # FTPS rejeitado pelo servidor (500 AUTH); nunca reenviar senha via FTP plano
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
