@@ -131,3 +131,30 @@ async function loadOverview(){try{
 }
 function init(){setPeriod('dateFrom','dateTo',24);setPeriod('eventFrom','eventTo',24);loadOverview().then(buildMetricPicker);setInterval(()=>{if(!document.hidden)loadOverview()},5000);window.addEventListener('resize',()=>{if(state.historyData&&state.page==='history')drawChart($('historyChart'),state.historyData.rows,state.historyData.metrics,state.historyData.bucket_seconds,state.historyData.poll_seconds)});}
 init();
+
+$('generateMikrotikAgent').addEventListener('click',async()=>{
+  const btn=$('generateMikrotikAgent'),status=$('agentDiagnostic');
+  if(window.location.protocol!=='https:'){status.textContent='Ative HTTPS no domínio Locaweb antes de gerar o agente.';notice('HTTPS obrigatório para o agente MikroTik',true);return}
+  if(!confirm('Criar novo token e revogar o agente anterior? O arquivo .rsc contém uma credencial secreta.'))return;
+  btn.disabled=true;
+  try {
+    const response=await api('agent_provision',{endpoint_url:$('agentEndpointUrl').value.trim()});
+    const blob=new Blob([response.rsc],{type:'text/plain;charset=utf-8'});
+    const link=document.createElement('a'),url=URL.createObjectURL(blob);
+    link.href=url;link.download=response.filename||'usca-vale-mikrotik.rsc';
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    status.textContent='Agente gerado. Importe o .rsc no RouterOS e guarde-o com segurança; ele contém o token. A USCA deve estar habilitada e mapeada.';
+    notice('Agente MikroTik gerado e baixado');
+  }catch(e){status.textContent=e.message;notice(e.message,true)}finally{btn.disabled=false}
+});
+$('probeMikrotikModbus').addEventListener('click',async()=>{
+  const id=Number($('mapDevice').value),status=$('agentDiagnostic'),btn=$('probeMikrotikModbus');
+  if(!id){notice('Selecione o equipamento real no mapeamento',true);return}
+  btn.disabled=true;status.textContent='Testando DNS, TCP e FC04 a partir da Locaweb...';
+  try {
+    const result=await api('agent_probe',{device_id:id});
+    status.textContent='DNS: '+(result.dns?'OK':'Falha')+' · TCP: '+(result.tcp?'OK':'Falha')+' · FC04: '+(result.modbus?'OK':'Falha')+'. '+(result.message||result.error||'')+(result.modbus?' '+result.metric+': '+result.value:'');
+    notice(result.modbus?'Leitura FC04 confirmada':'Diagnóstico incompleto, verifique os detalhes',!result.modbus);
+  }catch(e){status.textContent=e.message;notice(e.message,true)}finally{btn.disabled=false}
+});

@@ -56,11 +56,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy/assets deploy/src deploy/sql
-          cp index.php api.php login.php logout.php install.php .htaccess deploy/
+          cp index.php api.php collect-trigger.php login.php logout.php install.php .htaccess deploy/
           cp -R assets/. deploy/assets/
           cp -R src/. deploy/src/
           cp sql/schema.sql sql/.htaccess deploy/sql/
           test -f deploy/index.php
+          test -f deploy/collect-trigger.php
+          test -f deploy/src/TriggerAgent.php
           test -f deploy/assets/visual-dashboard.js
           test -f deploy/.htaccess
           test -f deploy/src/bootstrap.php
@@ -85,6 +87,10 @@ jobs:
             php -l api.php
             php -l install.php
             php tests/installer_contract.php
+            php tests/trigger_agent.php
+            php -l collect-trigger.php
+            php -l src/Collector.php
+            php -l src/TriggerAgent.php
           else
             echo "::error::PHP nao disponivel para validar o instalador."
             exit 1

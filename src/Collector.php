@@ -5,9 +5,13 @@ require_once __DIR__.'/ModbusClient.php';
 final class Collector {
     private PDO $db;
     public function __construct(){ $this->db=db(); }
-    public function tick(?string $forcedPhase=null): array {
+    public function tick(?string $forcedPhase=null, ?int $onlyDevice=null, bool $realOnly=false): array {
         $now=utc(); $results=[];
-        $devices=q('SELECT d.* FROM devices d LEFT JOIN collector_state s ON s.device_id=d.id WHERE d.enabled=1 AND (s.next_due_at IS NULL OR s.next_due_at<=?) ORDER BY d.id',[$now])->fetchAll();
+        $sql='SELECT d.* FROM devices d LEFT JOIN collector_state s ON s.device_id=d.id WHERE d.enabled=1 AND (s.next_due_at IS NULL OR s.next_due_at<=?)';
+        $params=[$now];
+        if($realOnly) $sql.=' AND d.simulate=0';
+        if($onlyDevice!==null){$sql.=' AND d.id=?';$params[]=$onlyDevice;}
+        $devices=q($sql.' ORDER BY d.id',$params)->fetchAll();
         foreach ($devices as $d) {
             $id=(int)$d['id'];
             // Lease is not a high availability lock: run only ONE collector service at once.

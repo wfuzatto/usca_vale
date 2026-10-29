@@ -10,6 +10,41 @@ try {
     $input=json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);
     if (!is_array($input)) throw new InvalidArgumentException('JSON inválido');
     switch($action) {
+    case 'agent_provision':
+        require_once __DIR__.'/src/TriggerAgent.php';
+        if (!triggerHostIsTls($_SERVER)) throw new RuntimeException('Abra este painel via HTTPS válido antes de gerar o agente MikroTik.');
+        $url=triggerEndpointUrl((string)($input['endpoint_url']??''));
+        $token=bin2hex(random_bytes(32));
+        setSetting('collector_trigger_sha256',hash('sha256',$token));
+        setSetting('collector_trigger_interval','30');
+        setSetting('collector_trigger_last_start','0');
+        jsonOut(['ok'=>true,'filename'=>'usca-vale-mikrotik.rsc','rsc'=>triggerRsc($url,$token),
+            'warning'=>'Este arquivo contém credencial de acesso e revoga o agente anterior. Mantenha-o privado.']);
+    case 'agent_probe':
+        $id=(int)($input['device_id']??0);
+        $device=q('SELECT * FROM devices WHERE id=? AND simulate=0',[$id])->fetch();
+        if (!$device) throw new InvalidArgumentException('Selecione um equipamento real cadastrado.');
+        $host=(string)$device['host'];
+        $ips=filter_var($host,FILTER_VALIDATE_IP)?[$host]:(gethostbynamel($host)?:[]);
+        if (!$ips) jsonOut(['ok'=>false,'dns'=>false,'tcp'=>false,'modbus'=>false,
+            'error'=>'DNS não resolveu este hostname na hospedagem.'],200);
+        $maps=q('SELECT * FROM mappings WHERE device_id=? AND enabled=1 AND fc=4 ORDER BY address LIMIT 1',[$id])->fetch();
+        if (!$maps) throw new RuntimeException('Configure um registrador FC04 válido neste equipamento antes do diagnóstico.');
+        try {$client=new ModbusClient($host,(int)$device['port'],3.0);}
+        catch(Throwable $e) {
+            jsonOut(['ok'=>false,'dns'=>true,'tcp'=>false,'modbus'=>false,
+                'error'=>'Falha TCP de saída. Confira o NAT, firewall e restrições da hospedagem.'],200);
+        }
+        try {
+            $words=$client->read((int)$device['unit_id'],4,(int)$maps['address'],(int)$maps['words']);
+            $measurement=ModbusClient::decode($words,(string)$maps['value_type'],(int)$maps['scale_exp']);
+            jsonOut(['ok'=>true,'dns'=>true,'tcp'=>true,'modbus'=>true,
+                'metric'=>$maps['metric'],'value'=>$measurement,'address'=>(int)$maps['address'],
+                'message'=>'FC04 respondeu; valide o valor e a escala comparando com a tela da DEIF.'],200);
+        } catch(Throwable $e) {
+            jsonOut(['ok'=>false,'dns'=>true,'tcp'=>true,'modbus'=>false,
+                'error'=>'TCP conectou, mas FC04 não foi validado. Confira Unit ID, mapa e controlador.'],200);
+        }
     case 'topology_save':
         $labels=$input['labels']??null;
         if (!is_array($labels)) throw new InvalidArgumentException('Rótulos de topologia inválidos');
@@ -98,7 +133,8 @@ try {
     }
     foreach($devices as &$d) {
       $d['latest']=$lookup[(int)$d['id']]??null;
-      $d['stale']= !$d['last_seen'] || time()-strtotime($d['last_seen'])>max(15,(int)$d['poll_seconds']*3);
+      $triggerCadence=setting('collector_trigger_sha256','')!=='' && (int)$d['simulate']===0 ? (int)setting('collector_trigger_interval','30') : 0;
+      $d['stale']= !$d['last_seen'] || time()-strtotime($d['last_seen'])>max(15,(int)$d['poll_seconds']*3,$triggerCadence*3);
       unset($d['host']); // equipment credentials/network restricted to administration endpoint
     }unset($d);
     $operational='d.enabled=1 AND e.category<>?';$eventArgs=['mapping_invalidated'];
@@ -125,6 +161,7 @@ try {
     $rows=q($sql,$params)->fetchAll();
     foreach($rows as &$r) $r['bucket'].='Z';unset($r);
     $pollSeconds=$device>0?(int)q('SELECT poll_seconds FROM devices WHERE id=?',[$device])->fetchColumn():null;
+    if($device>0 && setting('collector_trigger_sha256','')!=='') $pollSeconds=max((int)$pollSeconds,(int)setting('collector_trigger_interval','30'));
     jsonOut(['rows'=>$rows,'metrics'=>$metrics,'bucket_seconds'=>$bucket,'poll_seconds'=>$pollSeconds,'from'=>$from.'Z','to'=>$to.'Z','count'=>count($rows),'invalid_data_before'=>$cutoffs]);
  case 'events':
     $from=mustDate($_GET['from']??null,gmdate('Y-m-d H:i:s',time()-86400));$to=mustDate($_GET['to']??null,gmdate('Y-m-d H:i:s'));
