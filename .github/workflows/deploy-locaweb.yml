@@ -70,6 +70,16 @@ jobs:
           fi
           echo "Pacote verificado. Sem config.php, backups, var ou coletor."
 
+      - name: Verificar sintaxe e tooltip antes do envio
+        shell: bash
+        run: |
+          set -euo pipefail
+          for js in assets/chart-hover.js assets/app.js assets/visual-dashboard.js; do
+            node --check "$js"
+          done
+          node tests/chart_hover_contract.cjs
+          if command -v php >/dev/null 2>&1; then php -l index.php; fi
+
       - name: Publicar com SSH/SCP (porta 22, host key fixada)
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         env:

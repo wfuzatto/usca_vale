@@ -64,7 +64,7 @@ function miniEventTable(rows){return rows.length?`<div class="table-responsive">
 function drawChart(canvas,rows,series,bucket){const box=canvas.getBoundingClientRect();const w=Math.max(360,box.width||800),h=Math.max(180,box.height||240),dpr=window.devicePixelRatio||1;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
  ctx.clearRect(0,0,w,h);const L=68,R=20,T=19,B=38;const pw=w-L-R,ph=h-T-B;
  const points=rows.map(r=>({ts:Date.parse(r.bucket),...r}));const vals=points.flatMap(r=>series.map(key=>r[key]===null?null:Number(r[key]))).filter(v=>v!==null&&Number.isFinite(v));
- if(!vals.length){ctx.fillStyle='#93a1af';ctx.textAlign='center';ctx.fillText('Sem dados para o período selecionado',w/2,h/2);return}
+ if(!vals.length){ctx.fillStyle='#93a1af';ctx.textAlign='center';ctx.fillText('Sem dados para o período selecionado',w/2,h/2);window.USCAChartHover?.attach(canvas,{rows:[],series:[]});return}
  let ymin=Math.min(...vals),ymax=Math.max(...vals);if(ymin===ymax){ymin-=Math.abs(ymin)*.02||1;ymax+=Math.abs(ymax)*.02||1}const pad=(ymax-ymin)*.10;ymin-=pad;ymax+=pad;
  const tmin=points[0]?.ts||0,tmax=points[points.length-1]?.ts||1;
  const x=t=>L+(t-tmin)/Math.max(1,tmax-tmin)*pw,y=v=>T+(1-(v-ymin)/(ymax-ymin))*ph;
@@ -72,6 +72,15 @@ function drawChart(canvas,rows,series,bucket){const box=canvas.getBoundingClient
  for(let i=0;i<=4;i++){const yy=T+ph*i/4;ctx.strokeStyle='#edf2f8';ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(w-R,yy);ctx.stroke();ctx.fillStyle='#90a2b4';ctx.fillText(num(ymax-(ymax-ymin)*i/4,1),L-12,yy+4)}
  ctx.textAlign='center';for(let i=0;i<=4;i++){const tt=tmin+(tmax-tmin)*i/4;const xx=L+pw*i/4;ctx.fillStyle='#8ba0b4';ctx.fillText(new Date(tt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),xx,h-11)}
  series.forEach((key,index)=>{ctx.lineWidth=2.4;ctx.strokeStyle=COLORS[index%COLORS.length];ctx.beginPath();let previous=null;for(const p of points){const val=p[key]===null?null:Number(p[key]);if(val===null||!Number.isFinite(val)){previous=null;continue}const xx=x(p.ts),yy=y(val);if(previous!==null&&p.ts-previous<=bucket*2500){ctx.lineTo(xx,yy)}else ctx.moveTo(xx,yy);previous=p.ts}ctx.stroke()});
+ window.USCAChartHover?.attach(canvas,{
+  rows:points,
+  series:series.map((key,index)=>({
+   key,color:COLORS[index%COLORS.length],
+   label:state.overview?.catalog?.[key]?.[0]||key,
+   unit:state.overview?.catalog?.[key]?.[1]||''
+  })),
+  plot:{left:L,top:T,width:pw,height:ph},x,y
+ });
 }
 async function searchEvents(){try{const d=await api('events',null,{device:$('eventDevice').value,severity:$('eventSeverity').value,...queryPeriod('eventFrom','eventTo')});
  $('eventCount').textContent=d.rows.length+' ocorrência(s)'+(d.truncated?' (limite de exibição)':'');

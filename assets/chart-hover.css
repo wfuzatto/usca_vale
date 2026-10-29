@@ -1,0 +1,21 @@
+
+/* Ferramenta de leitura de pontos - dashboard e investigacao historica */
+.usca-chart-hover-host{position:relative}
+.usca-chart-hover-tooltip[hidden],.usca-chart-hover-guide[hidden]{display:none!important}
+.usca-chart-hover-tooltip{position:absolute;z-index:70;width:max-content;max-width:min(275px,94%);min-width:165px;
+  background:#0b2947f2;color:white;border:1px solid #37698b;border-radius:8px;
+  padding:9px 11px;box-shadow:0 9px 24px #102b4966;pointer-events:none;
+  font:12px/1.45 "Segoe UI",Arial,sans-serif}
+.usca-chart-hover-time{font-size:12px;font-weight:700;white-space:nowrap}
+.usca-chart-hover-note{font-size:10px;color:#b5cfdf;margin:1px 0 7px}
+.usca-chart-hover-list{display:grid;gap:4px}
+.usca-chart-hover-value{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.usca-chart-hover-value strong{font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.usca-chart-hover-name{display:flex;align-items:center;gap:6px;min-width:0}
+.usca-chart-hover-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usca-chart-hover-name i{width:8px;height:8px;border-radius:50%;flex:none}
+.usca-chart-hover-guide{position:absolute;width:1px;background:#2367a9b5;pointer-events:none;z-index:60}
+.usca-chart-hover-dots{pointer-events:none;position:absolute;inset:0;z-index:61}
+.usca-chart-hover-dot{position:absolute;border:2px solid white;border-radius:50%;width:9px;height:9px;
+  transform:translate(-50%,-50%);box-shadow:0 0 0 1px #25415f}
+@media print{.usca-chart-hover-tooltip,.usca-chart-hover-guide,.usca-chart-hover-dots{display:none!important}}

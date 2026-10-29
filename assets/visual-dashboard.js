@@ -5,10 +5,10 @@
   const graphColors=['#147df0','#12b957','#ed3449'];
   const graphKeys={
     Voltage:{id:'chartVoltage',legend:'legendVoltage',keys:['voltage_l12','voltage_l23','voltage_l31'],labels:['L1-L2','L2-L3','L3-L1'],title:'Tensão',unit:'V'},
-    Frequency:{id:'chartFrequency',legend:'legendFrequency',keys:['mains_frequency','generator_frequency'],labels:['Concessionária','Gerador']},
-    Current:{id:'chartCurrent',legend:'legendCurrent',keys:['current_l1','current_l2','current_l3'],labels:['Fase L1','Fase L2','Fase L3']},
+    Frequency:{id:'chartFrequency',legend:'legendFrequency',unit:'Hz',keys:['mains_frequency','generator_frequency'],labels:['Concessionária','Gerador']},
+    Current:{id:'chartCurrent',legend:'legendCurrent',unit:'A',keys:['current_l1','current_l2','current_l3'],labels:['Fase L1','Fase L2','Fase L3']},
     Power:{id:'chartPower',legend:'legendPower',keys:['power_kw'],labels:['Potência ativa'],title:'Potência Ativa',unit:'kW'},
-    Factor:{id:'chartFactor',legend:'legendFactor',keys:['power_factor'],labels:['Fator de potência']},
+    Factor:{id:'chartFactor',legend:'legendFactor',unit:'',keys:['power_factor'],labels:['Fator de potência']},
     Demand:{id:'chartDemand',legend:'legendDemand',keys:['power_kva'],labels:['Demanda'],title:'Demanda',unit:'kVA'}
   };
   const vState={hours:1/12,chartLast:0,chartLoading:false,chartData:null,chartDevice:null,topology:{mains:'Concessionária',bus:'Barramento',loads:'Cargas do Parque'}};
@@ -93,12 +93,15 @@
     const mainsSupply=sourceState===true&&mainBreaker===true&&tieBreaker===true;
     const activeGen=gens.find(d=>bit(d,'generator_breaker')===true&&bit(d,'generator_running')===true)||null;
     const supply=!busDead&&(mainsSupply||!!activeGen);
-    const busLabel=busVoltage!==null||busFrequency!==null?`${reading(busVoltage,'V',1)} / ${reading(busFrequency,'Hz',2)}`:supply?'Alimentação confirmada; barramento sem medição':'Alimentação não confirmada';
+    const mainsVoltage=firstValue(main,['mains_voltage_l12']),mainsFrequency=firstValue(main,['mains_frequency']);
+    const mainLine=mainsVoltage!==null||mainsFrequency!==null?`M: ${reading(mainsVoltage,'V',1)} / ${reading(mainsFrequency,'Hz',2)}`:'M: sem medição';
+    const busLabel=busVoltage!==null||busFrequency!==null?`BB: ${reading(busVoltage,'V',1)} / ${reading(busFrequency,'Hz',2)}`:supply?'BB: alimentação confirmada, sem medição':'BB: alimentação não confirmada';
     const topo=vState.topology;
     let html=`<svg class="energy-schematic" viewBox="0 0 950 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Diagrama unifilar conceitual. Os contatos verdes só indicam estados quando validados por telemetria.">
     <g class="tower" transform="translate(0,-9) scale(1,.71)"><path d="M80 42 50 158 M80 42 111 158 M60 95h40M53 122h55M46 157h70M67 76l13-12 13 12M65 104l31 24M95 104l-31 24M54 138l52 19M106 138l-52 19"/></g>
     <text class="diagram-title" x="81" y="124" text-anchor="middle">${txt(topo.mains.toUpperCase())}</text>
     ${statusPill(81,133,sourceState===true?'NORMAL':sourceState===false?'FALHA':'SEM LEITURA',sourceState===true?'green':sourceState===false?'red':'grey')}
+    <text class="diagram-sub" x="116" y="176" text-anchor="middle">${txt(mainLine)}</text>
     <path class="wire" d="M120 98H190M228 98H298V145H918"/>
     <rect class="element-box ${mainBreaker===true?'is-active':mainBreaker===false?'faulty':'inactive'}" x="190" y="88" width="38" height="19"/>
     <text class="diagram-sub" x="209" y="69" text-anchor="middle">Rede (MB)</text>
@@ -153,7 +156,7 @@
     ctx.font='10px Segoe UI,Arial,sans-serif';ctx.fillStyle='#586d85';
     const ts=rows.map(r=>Date.parse(r.bucket));
     const series=defs.filter(d=>rows.some(r=>r[d.key]!==null&&r[d.key]!==undefined&&Number.isFinite(Number(r[d.key]))));
-    if(!rows.length||!series.length){ctx.fillStyle='#98a6b7';ctx.textAlign='center';ctx.fillText('Sem dados no período',w/2,h/2);return []}
+    if(!rows.length||!series.length){ctx.fillStyle='#98a6b7';ctx.textAlign='center';ctx.fillText('Sem dados no período',w/2,h/2);window.USCAChartHover?.attach(canvas,{rows:[],series:[]});return []}
     const vals=rows.flatMap(r=>series.map(s=>r[s.key])).filter(v=>v!==null&&v!==undefined&&Number.isFinite(Number(v))).map(Number);
     let lo=Math.min(...vals),hi=Math.max(...vals);
     if(lo===hi){const bump=Math.max(0.02,Math.abs(lo)*.015);lo-=bump;hi+=bump}
@@ -174,6 +177,10 @@
         const xx=x(ts[i]),yy=y(Number(n));if(prior!==null&&ts[i]-prior<=bucket*2600)ctx.lineTo(xx,yy);else ctx.moveTo(xx,yy);prior=ts[i];
       });ctx.stroke();
     });
+    window.USCAChartHover?.attach(canvas,{
+      rows:rows.map((r,i)=>({...r,ts:ts[i]})),
+      series,plot:{left:L,top:T,width:W,height:H},x,y
+    });
     return series;
   }
   function renderAllCharts(){if(!vState.chartData)return;for(const g of Object.values(graphKeys)){
@@ -183,7 +190,8 @@
     const scaled=g.unit&&engineeringUnit(g.unit)&&rows.some(r=>g.keys.some(k=>r[k]!==null&&r[k]!==undefined&&Math.abs(Number(r[k]))>=1000));
     const displayRows=scaled?rows.map(r=>({...r,...Object.fromEntries(g.keys.map(k=>[k,r[k]===null||r[k]===undefined?null:Number(r[k])/1000]))})):rows;
     if(g.title)el.parentElement.querySelector('h3').textContent=`${g.title} (${scaled?engineeringUnit(g.unit):g.unit})`;
-    const found=chart(el,displayRows,all,vState.chartData.bucket_seconds);
+    const displayUnit=scaled?engineeringUnit(g.unit):(g.unit||'');
+    const found=chart(el,displayRows,all.map(s=>({...s,unit:displayUnit})),vState.chartData.bucket_seconds);
     legend.innerHTML=found.map(s=>`<span class="chart-legend-item"><i class="chart-legend-line" style="background:${s.color}"></i>${txt(s.label)}</span>`).join('');
   }}
   window.uscaRefreshCharts=async function(data,force=false){
