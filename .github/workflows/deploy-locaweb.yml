@@ -96,6 +96,27 @@ jobs:
             echo "Nenhuma chave SSH obtida; acesso SFTP ainda nao demonstrado."
           fi
 
+      - name: Testar login SFTP criptografado (sem alterar arquivos)
+        env:
+          FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
+          FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh-keyscan -T 7 -p 22 -t ed25519 "$FTP_HOST" 2>/dev/null > /tmp/locaweb_known_hosts
+          test -s /tmp/locaweb_known_hosts
+          fingerprint="$(ssh-keygen -lf /tmp/locaweb_known_hosts -E sha256 | awk '{print $2}')"
+          if [[ "$fingerprint" != "SHA256:PECk31ESSziOS6VSdwooBFs9djNEEUKy6wUBbpPok50" ]]; then
+            echo "::error::A identidade SSH do host mudou; interrompendo por seguranca."
+            exit 1
+          fi
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq sshpass >/dev/null
+          export SSHPASS="$FTP_PASSWORD"
+          printf 'pwd\\nbye\\n' | timeout 20 sshpass -e sftp -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -P 22 "$FTP_USER@$FTP_HOST"
+          echo "Login SFTP seguro verificado (nenhum upload realizado)."
+
       - name: Enviar arquivos por FTPS (TLS obrigatorio)
         if: false # FTPS rejeitado pelo servidor (500 AUTH); nunca reenviar senha via FTP plano
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
