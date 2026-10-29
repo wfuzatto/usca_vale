@@ -78,7 +78,14 @@ jobs:
             node --check "$js"
           done
           node tests/chart_hover_contract.cjs
-          if command -v php >/dev/null 2>&1; then php -l index.php; fi
+          if command -v php >/dev/null 2>&1; then
+            php -l index.php
+            php -l install.php
+            php tests/installer_contract.php
+          else
+            echo "::error::PHP nao disponivel para validar o instalador."
+            exit 1
+          fi
 
       - name: Publicar com SSH/SCP (porta 22, host key fixada)
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
