@@ -70,7 +70,20 @@ jobs:
           fi
           echo "Pacote publico preparado (sem config.php, logs, backups, testes ou coletor)."
 
+      - name: Verificar disponibilidade SSH/SFTP sem usar credenciais
+        env:
+          FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if timeout 6 bash -c 'echo > /dev/tcp/"$1"/22' -- "$FTP_HOST" 2>/dev/null; then
+            echo "Porta TCP 22 aberta; avaliar habilitacao SSH e validar chave do servidor antes de autenticar."
+          else
+            echo "Porta TCP 22 indisponivel para este servidor. Habilite SSH no painel da hospedagem se suportado."
+          fi
+
       - name: Enviar arquivos por FTPS (TLS obrigatorio)
+        if: false # FTPS rejeitado pelo servidor (500 AUTH); nunca reenviar senha via FTP plano
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.LOCAWEB_FTP_HOST }}
