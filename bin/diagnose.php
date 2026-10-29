@@ -26,7 +26,7 @@ try {
             . ' SUM(taken_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE)) five_minutes,'
             . ' SUM(taken_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)) one_hour,'
             . ' SUM(taken_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)) one_day'
-            . ' FROM samples WHERE device_id=?' . $filter,
+            . ' FROM samples WHERE device_id=? AND taken_at>=DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)' . $filter,
             $params
         )->fetch();
         $latest = q('SELECT id,taken_at,simulated,values_json FROM samples WHERE device_id=?' . $filter . ' ORDER BY id DESC LIMIT 1', $params)->fetch();
@@ -38,7 +38,7 @@ try {
             'latest_id' => (int)($latest['id'] ?? 0),
             'latest_at' => $latest['taken_at'] ?? null,
             'age_seconds' => $age,
-            'total_valid' => (int)$counts['total'],
+            'total_valid' => (int)$counts['total'], // amostras das ultimas 24 horas, evita COUNT em milhoes de registros
             'last_5min' => (int)$counts['five_minutes'],
             'last_1h' => (int)$counts['one_hour'],
             'last_24h' => (int)$counts['one_day'],
@@ -64,7 +64,7 @@ try {
             . " ultima leitura=" . ($dev['last_seen'] ?: '-') . "\n";
         echo "  falhas seguidas=" . ($dev['failure_count'] ?? 0)
             . " ultimo erro=" . ($dev['last_error'] ?: '-') . "\n";
-        echo "  amostras depois do corte=" . $s['total_valid']
+        echo "  amostras nas ultimas 24h depois do corte=" . $s['total_valid']
             . " (5min=" . $s['last_5min'] . ", 1h=" . $s['last_1h']
             . ", 24h=" . $s['last_24h'] . ")\n";
         echo "  inicio=" . ($s['first_at'] ?: '-') . " fim=" . ($s['latest_at'] ?: '-')
