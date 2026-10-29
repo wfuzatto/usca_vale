@@ -28,12 +28,12 @@ jobs:
       - name: Obter codigo-fonte
         uses: actions/checkout@v4
 
-      - name: Validar credenciais e caminho isolado
+      - name: Validar credenciais e raiz publica
         env:
           FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
           FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
           FTP_PASSWORD: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
-          FTP_DIR: ${{ vars.LOCAWEB_FTP_DIR || 'public_html/usca_vale/' }}
+          FTP_DIR: public_html/
         shell: bash
         run: |
           set -euo pipefail
@@ -45,11 +45,11 @@ jobs:
             echo "::error::Caminho remoto invalido."
             exit 1
           fi
-          if [[ "$FTP_DIR" != "public_html/usca_vale/" ]]; then
-            echo "::error::Destino diferente de public_html/usca_vale/; revisao manual obrigatoria."
+          if [[ "$FTP_DIR" != "public_html/" ]]; then
+            echo "::error::Destino diferente de public_html/; revisao manual obrigatoria."
             exit 1
           fi
-          echo "Destino permitido: public_html/usca_vale/. Outras pastas nao serao alteradas."
+          echo "Destino configurado: public_html/ (raiz publica do site). Sem limpeza de arquivos remotos."
 
       - name: Preparar somente os arquivos publicos
         shell: bash
@@ -93,7 +93,7 @@ jobs:
           FTP_HOST: ${{ secrets.LOCAWEB_FTP_HOST }}
           FTP_USER: ${{ secrets.LOCAWEB_FTP_USER }}
           FTP_PASSWORD: ${{ secrets.LOCAWEB_FTP_PASSWORD }}
-          FTP_DIR: ${{ vars.LOCAWEB_FTP_DIR || 'public_html/usca_vale/' }}
+          FTP_DIR: public_html/
         shell: bash
         run: |
           set -euo pipefail
@@ -108,26 +108,32 @@ jobs:
           sudo apt-get install -y -qq sshpass >/dev/null
           export SSHPASS="$FTP_PASSWORD"
           SSH_OPTS=(-oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -oConnectTimeout=10)
-          # O shell remoto desta hospedagem nao compartilha o mesmo contexto do SFTP.
-          # Crie a pasta pelo proprio SFTP (seguro), nunca por FTP em texto claro.
-          prep_log="$(mktemp)"
+          # A pasta home da conta nao e o document root. SSH e SFTP possuem views diferentes.
+          # Conferir o destino e REJEITAR colisoes antes de publicar na raiz.
+          audit_log="$(mktemp)"
           {
-            echo 'mkdir public_html/usca_vale'
-            echo 'cd public_html/usca_vale'
+            echo 'cd public_html'
             echo pwd
+            echo 'ls -1a'
             echo bye
-          } | timeout 40 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST" 2>&1 | tee "$prep_log"
-          if ! grep -q '/public_html/usca_vale' "$prep_log"; then
-            echo '::error::SFTP nao confirmou destino public_html/usca_vale. Nenhum arquivo enviado.'
+          } | timeout 40 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST" 2>&1 | tee "$audit_log"
+          if ! grep -q '/public_html' "$audit_log"; then
+            echo '::error::Raiz publica public_html/ nao foi confirmada. Upload cancelado.'
             exit 1
           fi
+          if grep -Eiq '^(index[.]php|[.]htaccess|api[.]php|login[.]php|logout[.]php|install[.]php|assets|src|sql)[[:space:]]*$' "$audit_log"; then
+            echo '::error::Raiz ja contem arquivos/pastas com nomes usados pelo USCA Vale. Para evitar sobrescrever outro site, upload interrompido.'
+            echo 'Confira e faca backup dos arquivos existentes no WebFTP antes de substituir.'
+            exit 1
+          fi
+          echo 'Raiz publica auditada sem colisoes conhecidas. Iniciando transferencia...'
           timeout 180 sshpass -e scp -r "${SSH_OPTS[@]}" -P 22 ./deploy/. "$FTP_USER@$FTP_HOST:$FTP_DIR"
           # Baixe amostras do destino e compare byte a byte: o shell SSH e restrito.
           verify_dir="$(mktemp -d)"
           {
-            echo "get public_html/usca_vale/index.php $verify_dir/index.php"
-            echo "get public_html/usca_vale/.htaccess $verify_dir/.htaccess"
-            echo "get public_html/usca_vale/assets/visual-dashboard.js $verify_dir/visual-dashboard.js"
+            echo "get public_html/index.php $verify_dir/index.php"
+            echo "get public_html/.htaccess $verify_dir/.htaccess"
+            echo "get public_html/assets/visual-dashboard.js $verify_dir/visual-dashboard.js"
             echo bye
           } | timeout 40 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST"
           test -s "$verify_dir/index.php"
@@ -136,7 +142,7 @@ jobs:
           cmp -s deploy/index.php "$verify_dir/index.php"
           cmp -s deploy/.htaccess "$verify_dir/.htaccess"
           cmp -s deploy/assets/visual-dashboard.js "$verify_dir/visual-dashboard.js"
-          echo 'PUBLICADO E VERIFICADO: public_html/usca_vale/ (3 arquivos comparados byte a byte).'
+          echo 'PUBLICADO E VERIFICADO: public_html/ (3 arquivos comparados byte a byte).'
           echo 'O banco de dados e coletor Modbus continuam fora do deploy.'
 
       - name: Resumo do modo simulacao de deploy
