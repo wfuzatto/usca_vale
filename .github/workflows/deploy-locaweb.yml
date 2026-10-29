@@ -92,15 +92,11 @@ jobs:
           export SSHPASS="$FTP_PASSWORD"
           SSH_OPTS=(-oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -oConnectTimeout=10)
           timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "test -d public_html && mkdir -p -- '$FTP_DIR'"
-          timeout 180 sshpass -e scp -r "${SSH_OPTS[@]}" -P 22 ./deploy/. "$FTP_USER@$FTP_HOST:$FTP_DIR"
-          local_sha="$(sha256sum deploy/index.php | awk '{print $1}')"
-          remote_line="$(timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "sha256sum '$FTP_DIR/index.php'")"
-          remote_sha="${remote_line%% *}"
-          if [[ "$local_sha" != "$remote_sha" ]]; then
-            echo "::error::Falha de verificacao do arquivo index.php no servidor remoto."
-            exit 1
-          fi
-          echo "PUBLICADO: public_html/usca_vale/ - arquivo index.php conferido via SHA-256."
+          echo "PWD shell SSH e verificacao do caminho:"
+          timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "pwd; ls -ld public_html public_html/usca_vale || true"
+          echo "PWD e caminho dentro do subsistema SFTP:"
+          { echo pwd; echo 'cd public_html'; echo pwd; echo 'cd usca_vale'; echo pwd; echo bye; } | timeout 35 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST"
+          echo "Inspecao concluida; sem novos uploads."
           echo "Somente frontend/backend web. Banco de dados e coletor Modbus continuam separados."
 
       - name: Resumo do modo simulacao de deploy
