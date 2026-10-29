@@ -1,4 +1,4 @@
 Options -Indexes
-<FilesMatch "^(config\.php|config\.example\.php|README\.md|\.env|composer\..*)$">
+<FilesMatch "^(config\.php|config\.example\.php|README\.md|\.env|composer\..*|\.ftp-deploy-sync-state\.json)$">
 Require all denied
 </FilesMatch>
