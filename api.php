@@ -20,6 +20,13 @@ try {
         setSetting('collector_trigger_last_start','0');
         jsonOut(['ok'=>true,'filename'=>'usca-vale-mikrotik.rsc','rsc'=>triggerRsc($url,$token),
             'warning'=>'Este arquivo contém credencial de acesso e revoga o agente anterior. Mantenha-o privado.']);
+    case 'mains_profile_apply':
+        require_once __DIR__.'/src/ProfileInstaller.php';
+        if (($input['profile_id']??'')!=='deif-agc150-mains-13k8-20261028-r2'
+            || ($input['confirmation']??'')!=='CONFIRMO AGC150MA 13.8KV') {
+            throw new InvalidArgumentException('Confirmação do modelo AGC150MA 13,8 kV obrigatória.');
+        }
+        jsonOut(applyMainsLocalProfile((int)($input['device_id']??0),!empty($input['replace'])));
     case 'agent_probe':
         $id=(int)($input['device_id']??0);
         $device=q('SELECT * FROM devices WHERE id=? AND simulate=0',[$id])->fetch();

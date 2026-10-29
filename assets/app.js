@@ -158,3 +158,28 @@ $('probeMikrotikModbus').addEventListener('click',async()=>{
     notice(result.modbus?'Leitura FC04 confirmada':'Diagnóstico incompleto, verifique os detalhes',!result.modbus);
   }catch(e){status.textContent=e.message;notice(e.message,true)}finally{btn.disabled=false}
 });
+
+$('applyMainsProfile').addEventListener('click',async()=>{
+  const id=Number($('mapDevice').value),device=state.admin?.devices?.find(d=>Number(d.id)===id);
+  const status=$('profileMainsStatus'),btn=$('applyMainsProfile');
+  if(!device||Number(device.simulate)===1){status.textContent='Selecione um controlador real, nunca o simulador.';notice(status.textContent,true);return}
+  const previous=state.admin.mappings.filter(m=>Number(m.device_id)===id);
+  const message='Aplicar o perfil JÁ VALIDADO DEIF AGC150MA 13,8 kV a '+device.name+'?\n'+
+    'Serão gravadas 29 grandezas, cinco verificações, regras de 13,8 kV e a classificação MAINS.\n'+
+    (previous.length?'Os '+previous.length+' mapeamentos atuais serão substituídos com backup no MySQL.':'Não há mapeamentos existentes neste dispositivo.')+
+    '\nAs medições históricas NÃO serão apagadas. Não aplique em geradores.';
+  if(!confirm(message))return;
+  btn.disabled=true;status.textContent='Aplicando mapa existente com transação e cópia das configurações anteriores...';
+  try{
+    const answer=await api('mains_profile_apply',{device_id:id,
+      profile_id:'deif-agc150-mains-13k8-20261028-r2',confirmation:'CONFIRMO AGC150MA 13.8KV',
+      replace:previous.length>0});
+    await loadAdmin();
+    $('mapDevice').value=String(id);
+    status.textContent=(answer.already_applied?'Perfil já estava aplicado. ':'Perfil salvo no MySQL. ')+
+      answer.mappings+' grandezas, '+answer.profile+'. '+(answer.warning||'')+
+      ' Agora execute o teste DNS/TCP/Modbus FC04 e confira a tensão com o visor da DEIF.';
+    notice(answer.already_applied?'Perfil já aplicado':'Mapa DEIF MAINS aplicado; valide a leitura real');
+  }catch(e){status.textContent=e.message;notice(e.message,true)}
+  finally{btn.disabled=false}
+});
