@@ -34,4 +34,14 @@ if (strpos($source,'CREATE DATABASE IF NOT EXISTS')===false ||
     strpos($source,'if (!$createDb)')===false) {
     fwrite(STDERR,"Fluxo de banco existente ou criacao opcional esta incompleto.\n"); exit(1);
 }
+if (!validDbHost('usca_vale.mysql.dbaas.com.br') ||
+    !validDbHost('localhost') ||
+    !validDbHost('192.168.100.50')) {
+    fwrite(STDERR,"Rejeitou host MySQL permitido.\\n"); exit(1);
+}
+foreach (['mysql.example.com;port=99','mysql example.com','localhost:3306','../../etc/passwd',''] as $invalidHost) {
+    if (validDbHost($invalidHost)) {
+        fwrite(STDERR,"Aceitou host MySQL invalido.\\n"); exit(1);
+    }
+}
 echo "OK: tela de instalacao com credenciais visiveis, senha mascarada e banco/porta configuraveis.\n";
