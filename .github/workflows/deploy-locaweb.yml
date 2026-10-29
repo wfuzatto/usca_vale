@@ -114,7 +114,7 @@ jobs:
           sudo apt-get update -qq >/dev/null
           sudo apt-get install -y -qq sshpass >/dev/null
           export SSHPASS="$FTP_PASSWORD"
-          printf '%s\\n' 'pwd' 'ls -ld public_html' 'bye' | timeout 20 sshpass -e sftp -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -P 22 "$FTP_USER@$FTP_HOST"
+          { echo pwd; echo 'ls -ld public_html'; echo bye; } | timeout 20 sshpass -e sftp -oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -P 22 "$FTP_USER@$FTP_HOST"
           echo "Login SFTP seguro verificado (nenhum upload realizado)."
 
       - name: Enviar arquivos por FTPS (TLS obrigatorio)
