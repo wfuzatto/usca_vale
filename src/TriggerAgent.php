@@ -10,6 +10,13 @@ function triggerTokenValid(string $sent, string $storedSha): bool {
     if (!preg_match('/^[0-9a-f]{64}$/D',$sent)) return false;
     return hash_equals($storedSha,hash('sha256',$sent));
 }
+/** Prefer legacy auth header; RouterOS compatibility mode sends form body over HTTPS. */
+function triggerSubmittedToken(array $server, array $post): string {
+    $header=$server['HTTP_X_COLLECTOR_TOKEN']??null;
+    if(is_string($header) && $header!=='') return $header;
+    $form=$post['token']??null;
+    return is_string($form)?$form:'';
+}
 function triggerEndpointUrl(string $url): string {
     $u=parse_url(trim($url));
     if (!is_array($u) || strtolower((string)($u['scheme']??''))!=='https'
@@ -34,9 +41,9 @@ function triggerRsc(string $url,string $token): string {
 /system script add name="usca-vale-trigger" policy=read,write,test,ftp source={
     :local url "@@URL@@"
     :local token "@@TOKEN@@"
+    :local payload ("token=" . $token)
     :do {
-        :local reply [/tool fetch url=$url http-method=post http-data="trigger=1" http-header-field=("X-Collector-Token:" . $token) check-certificate=yes output=user as-value]
-        :if (($reply->"status") != "finished") do={ :log warning "USCA Vale: disparo HTTPS nao concluido" }
+        /tool fetch url=$url http-method=post http-data=$payload check-certificate=yes output=none
     } on-error={
         :log warning "USCA Vale: falha no disparo; confira HTTPS, DNS e o status remoto"
     }
