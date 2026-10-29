@@ -91,13 +91,36 @@ jobs:
           sudo apt-get install -y -qq sshpass >/dev/null
           export SSHPASS="$FTP_PASSWORD"
           SSH_OPTS=(-oStrictHostKeyChecking=yes -oUserKnownHostsFile=/tmp/locaweb_known_hosts -oPubkeyAuthentication=no -oPreferredAuthentications=password,keyboard-interactive -oNumberOfPasswordPrompts=1 -oConnectTimeout=10)
-          timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "test -d public_html && mkdir -p -- '$FTP_DIR'"
-          echo "PWD shell SSH e verificacao do caminho:"
-          timeout 35 sshpass -e ssh "${SSH_OPTS[@]}" -p 22 "$FTP_USER@$FTP_HOST" "pwd; ls -ld public_html public_html/usca_vale || true"
-          echo "PWD e caminho dentro do subsistema SFTP:"
-          { echo pwd; echo 'cd public_html'; echo pwd; echo 'cd usca_vale'; echo pwd; echo bye; } | timeout 35 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST"
-          echo "Inspecao concluida; sem novos uploads."
-          echo "Somente frontend/backend web. Banco de dados e coletor Modbus continuam separados."
+          # O shell remoto desta hospedagem nao compartilha o mesmo contexto do SFTP.
+          # Crie a pasta pelo proprio SFTP (seguro), nunca por FTP em texto claro.
+          prep_log="$(mktemp)"
+          {
+            echo 'mkdir public_html/usca_vale'
+            echo 'cd public_html/usca_vale'
+            echo pwd
+            echo bye
+          } | timeout 40 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST" 2>&1 | tee "$prep_log"
+          if ! grep -q '/public_html/usca_vale' "$prep_log"; then
+            echo '::error::SFTP nao confirmou destino public_html/usca_vale. Nenhum arquivo enviado.'
+            exit 1
+          fi
+          timeout 180 sshpass -e scp -r "${SSH_OPTS[@]}" -P 22 ./deploy/. "$FTP_USER@$FTP_HOST:$FTP_DIR"
+          # Baixe amostras do destino e compare byte a byte: o shell SSH e restrito.
+          verify_dir="$(mktemp -d)"
+          {
+            echo "get public_html/usca_vale/index.php $verify_dir/index.php"
+            echo "get public_html/usca_vale/.htaccess $verify_dir/.htaccess"
+            echo "get public_html/usca_vale/assets/visual-dashboard.js $verify_dir/visual-dashboard.js"
+            echo bye
+          } | timeout 40 sshpass -e sftp "${SSH_OPTS[@]}" -P 22 "$FTP_USER@$FTP_HOST"
+          test -s "$verify_dir/index.php"
+          test -s "$verify_dir/.htaccess"
+          test -s "$verify_dir/visual-dashboard.js"
+          cmp -s deploy/index.php "$verify_dir/index.php"
+          cmp -s deploy/.htaccess "$verify_dir/.htaccess"
+          cmp -s deploy/assets/visual-dashboard.js "$verify_dir/visual-dashboard.js"
+          echo 'PUBLICADO E VERIFICADO: public_html/usca_vale/ (3 arquivos comparados byte a byte).'
+          echo 'O banco de dados e coletor Modbus continuam fora do deploy.'
 
       - name: Resumo do modo simulacao de deploy
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
