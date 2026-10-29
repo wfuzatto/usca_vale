@@ -1,8 +1,11 @@
 <?php
 declare(strict_types=1);
 require_once dirname(__DIR__).'/src/Collector.php';
-// Only one daemon instance. OS file lock works across repeated Task Scheduler starts.
-$lockFile=sys_get_temp_dir().'/usca_vale_collector.lock';
+// Keep the lock in the private project runtime directory so SYSTEM and logged-in
+// users share the same lock on Windows (their temporary folders are different).
+$lockDir=dirname(__DIR__).'/var';
+if (!is_dir($lockDir) && !mkdir($lockDir,0700,true) && !is_dir($lockDir)) throw new RuntimeException('Não foi possível criar diretório do lock');
+$lockFile=$lockDir.'/collector.lock';
 $lock=fopen($lockFile,'c');
 if (!$lock || !flock($lock,LOCK_EX|LOCK_NB)) { fwrite(STDERR,"Coletor já ativo\n"); exit(2); }
 $once=in_array('--once',$argv,true);

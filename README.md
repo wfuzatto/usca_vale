@@ -55,7 +55,18 @@ Documentação consultada:
 
 O manual (base de **software 1.37**) define: funções 01/02/03/04 para leitura; bloco FC04 de endereços **0 a 499 configurável**, espelhando registros de **500 a 1999**. Os alarmes ativos podem ser consultados via **FC04 28000–28099** (o valor retornado é endereço de alarme, cuja descrição depende de parâmetro no USW). `INT16`, `UINT16`, `INT32`, `UINT32`, `BOOL`; para 32 bits o primeiro registro contém HI16 (ABCD). A fórmula de conversão é `valor = registro × 10^(−escala)`.
 
-**Importante:** a tabela XLSX oficial não pôde ser incorporada/validada automaticamente neste ambiente. Por isso não existem mapeamentos reais predefinidos; evitamos exibir grandezas indevidamente nomeadas. É **obrigatória** revisão técnica do mapa com o firmware local antes da operação em produção. A leitura de alarmes usa a faixa documentada, porém os códigos precisam de descrição no software DEIF. Se a leitura falhar, não se assume que não existem alarmes.
+Os endereços devem ser escolhidos na coluna correspondente ao tipo do controlador (MAINS, GEN, BTB etc.). O manual usa a mesma referência de tabelas para TCP e RS-485/RTU; a faixa de engenharia configurada no controlador também afeta a interpretação. A leitura de alarmes usa a faixa documentada, porém os códigos precisam de descrição no software DEIF. Se a leitura falhar, não se assume que não existem alarmes.
+
+### Perfil MAINS de média tensão
+
+O perfil [deif-agc150-mains-13k8.json](profiles/deif-agc150-mains-13k8.json) registra os endereços e fatores validados com a configuração nominal e fotos de um AGC 150 Mains em 13,8 kV. O [mapa de integração](docs/MAPA_MODBUS_LOCAL.md) explica as unidades, MB/TB, proveniência e correção de leituras anteriores. O perfil é específico desse comissionamento e não é ativado automaticamente em outras instalações.
+
+- As medições de rede não são exibidas como dados de gerador. Grandezas indisponíveis ficam como `—`.
+- Novas amostras de um perfil guardam words brutas e versão em `_provenance`; os aliases compartilham uma única leitura por ciclo.
+- Um perfil em `app_settings.modbus_profile_<device_id>` pode definir verificações de versão, nome, nominal e faixa antes da gravação.
+- `mapping_valid_from_<device_id>` marca a primeira data de um mapa validado. Amostras anteriores permanecem no banco e são excluídas dos gráficos operacionais.
+- `dashboard_real_only=1` limita o resumo operacional a dispositivos reais ativos. Eventos simulados e invalidados continuam no histórico administrativo.
+- `BOOL invertido` converte um sinal de falha em disponibilidade. Em bases existentes, execute [a migração do tipo](sql/migrations/20261028_mapping_bool_not.sql) no banco antes de usar `bool_not`; instalações novas já recebem o tipo pelo schema.
 
 A implementação executa apenas leituras Modbus TCP **01/02/03/04**. Não oferece partida, parada, desligamento, escrita de parâmetros, reset, disjuntores ou outros comandos remotos. Preferir rede industrial segregada, ACL limitando acesso ao controlador e backup das configurações da USCA.
 
@@ -65,12 +76,15 @@ A implementação executa apenas leituras Modbus TCP **01/02/03/04**. Não ofere
 php -l api.php
 php tests/run.php
 php tests/modbus_tcp.php
+php tests/mains_profile.php
 php bin/collect.php --once
 php bin/collect.php --once --phase=sag
 php bin/collect.php --once --phase=outage
 ```
 
 O simulador repete aproximadamente a cada 5 minutos: operação normal, subtensão, falta de rede, partida, alimentação pelo gerador e restabelecimento. `--phase` é somente para o simulador em instalações de desenvolvimento (não muda o equipamento real). Use ambiente de teste separado antes de ensaios artificiais.
+
+`php tests/collector_integration.php` exercita falha e recuperação com TCP local e banco de teste configurado em `config.php`; cria e remove um dispositivo descartável. Execute com o coletor agendado parado e em uma instalação de teste.
 
 ### Limitações relevantes / checklist para comissionamento
 
@@ -82,7 +96,7 @@ O simulador repete aproximadamente a cada 5 minutos: operação normal, subtens�
 6. **Histórico volumoso:** em 5 s, um dispositivo gera ~6,3 milhões de amostras/ano. Planeje disco/índices, retenção e eventual pré-agregação de longo prazo.
 7. **Eventos rápidos:** aquisição a cada 1–5 s **não captura transitórios de milissegundos** e não constitui analisador Classe A. Para PQ, surtos, harmônicas, flicker e afundamentos rápidos, integrar medidor dedicado.
 8. **Alarmes externos:** notificações por e-mail/Telegram, mapeamento de nomes de alarmes DEIF, perfis de usuários, múltiplas fontes no unifilar e importação automática da planilha oficial são melhorias a implementar e validar antes de operação crítica. Esta entrega inicial possui reconhecimento, alarmes por limites, eventos e logs, sem notificação externa.
-9. **Teste físico pendente:** sem conexão ao AGC 150 não é possível validar temporização, endereços, escalas, volume máximo de leitura, estabilidade/reconexão física. Não interprete sucesso de simulação como aceite em campo.
+9. **Validação física por instalação:** o perfil MAINS documentado foi conferido com leituras reais e fotos. Outros modelos, registradores, faixas e comportamento de reconexão exigem validação própria; o teste simulado não substitui essa conferência.
 
 ## Estrutura
 
@@ -106,4 +120,4 @@ e tabela de eventos recentes. A imagem de referência acompanha o pacote ZIP ent
 
 Para atualizar uma instalação anterior: faça backup do código e banco, substitua os
 arquivos preservando `config.php`, atualize a página com Ctrl+F5 e verifique o serviço coletor.
-A atualização visual não altera as tabelas existentes.
+A mudança visual não altera dados existentes. O suporte a `bool_not` requer a migração indicada acima em bancos criados antes dessa opção.

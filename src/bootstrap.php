@@ -38,6 +38,14 @@ function setting(string $key, string $default = ''): string {
 function setSetting(string $key, string $value): void {
     q('INSERT INTO app_settings(name,value) VALUES(?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)', [$key,$value]);
 }
+/** Invalid readings are retained in storage but excluded from operational charts. */
+function mappingCutoffs(): array {
+    $out=[];
+    foreach(q('SELECT name,value FROM app_settings WHERE name LIKE ?', ['mapping_valid_from_%'])->fetchAll() as $r) {
+        if (preg_match('/^mapping_valid_from_(\d+)$/D',$r['name'],$m) && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{3})?$/D',$r['value'])) $out[(int)$m[1]]=$r['value'];
+    }
+    return $out;
+}
 function jsonOut($data, int $status=200): never {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
@@ -61,10 +69,15 @@ function metricCatalog(): array {
       'mains_available'=>['Rede disponível','bool','Rede'], 'source_generator'=>['Carga no gerador','bool','Rede'],
       'generator_running'=>['Gerador ligado','bool','Gerador'], 'generator_fault'=>['Falha do gerador','bool','Gerador'],
       'mains_breaker'=>['Disjuntor da rede','bool','Rede'], 'generator_breaker'=>['Disjuntor do gerador','bool','Gerador'],
+      'tie_breaker'=>['Disjuntor de interligação (TB)','bool','Rede'],
+      'mains_voltage_l12'=>['Tensão rede L1-L2','V','Rede'], 'mains_voltage_l23'=>['Tensão rede L2-L3','V','Rede'], 'mains_voltage_l31'=>['Tensão rede L3-L1','V','Rede'],
+      'bus_voltage_l12'=>['Tensão barramento L1-L2','V','Barramento'], 'bus_voltage_l23'=>['Tensão barramento L2-L3','V','Barramento'], 'bus_voltage_l31'=>['Tensão barramento L3-L1','V','Barramento'], 'bus_frequency'=>['Frequência do barramento','Hz','Barramento'],
       'voltage_l12'=>['Tensão L1-L2','V','Elétrica'], 'voltage_l23'=>['Tensão L2-L3','V','Elétrica'], 'voltage_l31'=>['Tensão L3-L1','V','Elétrica'],
       'voltage_l1n'=>['Tensão L1-N','V','Elétrica'], 'voltage_l2n'=>['Tensão L2-N','V','Elétrica'], 'voltage_l3n'=>['Tensão L3-N','V','Elétrica'],
       'frequency'=>['Frequência','Hz','Elétrica'], 'current_l1'=>['Corrente L1','A','Elétrica'], 'current_l2'=>['Corrente L2','A','Elétrica'], 'current_l3'=>['Corrente L3','A','Elétrica'],
       'power_kw'=>['Potência ativa','kW','Potência'], 'power_kva'=>['Potência aparente','kVA','Potência'], 'power_kvar'=>['Potência reativa','kvar','Potência'],
+      'mains_power_kw'=>['Potência ativa da rede','kW','Rede'],
+      'mains_power_factor'=>['Fator de potência da rede','','Rede'],
       'power_factor'=>['Fator de potência','','Potência'], 'energy_kwh'=>['Energia acumulada','kWh','Potência'], 'load_pct'=>['Carga do gerador','%','Gerador'],
       'engine_rpm'=>['Rotação','rpm','Motor'], 'engine_hours'=>['Horímetro','h','Motor'], 'engine_temp'=>['Temperatura motor','°C','Motor'],
       'oil_pressure'=>['Pressão do óleo','bar','Motor'], 'battery_voltage'=>['Bateria','V','Motor'], 'starts'=>['Quantidade de partidas','','Motor'],

@@ -19,7 +19,7 @@ RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=$ROOT/backups /tmp
+ReadWritePaths=$ROOT/backups $ROOT/var /tmp
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -42,8 +42,8 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
-mkdir -p "$ROOT/backups"
-chown www-data:www-data "$ROOT/backups"
+mkdir -p "$ROOT/backups" "$ROOT/var"
+chown -R www-data:www-data "$ROOT/backups" "$ROOT/var"
 systemctl daemon-reload
 systemctl enable --now usca-vale.service usca-vale-backup.timer
 systemctl --no-pager status usca-vale.service || true

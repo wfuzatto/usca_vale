@@ -1,0 +1,321 @@
+{
+  "id": "deif-agc150-mains-13k8-20261028-r2",
+  "role": "mains",
+  "nominal_voltage_v": 13800,
+  "canonical_units": {
+    "voltage": "V",
+    "frequency": "Hz",
+    "current": "A",
+    "power": "kW/kvar/kVA",
+    "energy": "kWh",
+    "battery": "V"
+  },
+  "evidence": {
+    "table": "AGC 150 Modbus server tables 4189341212, Revision V, software 1.35.0, MAINS column",
+    "manual": "https://deif-cdn-umbraco.azureedge.net/media/w25puznj/agc-150-modbus-server-user-manual-4189341435-uk.pdf",
+    "controller_name": "AGC150MA",
+    "application_version_raw": 1221,
+    "nominal_u1": {
+      "fc": 3,
+      "address": 4410,
+      "raw": 1380,
+      "minimum_address": 6410,
+      "minimum_raw": 40,
+      "maximum_address": 8410,
+      "maximum_raw": 7500
+    },
+    "photos": "User photos 2026-10-28: M/Rede 14.16/14.01/13.85 kV; phase-neutral ~8 kV; S 0.80 MVA; P 0.02 MW; Q -0.07 Mvar; energy 15.36 MWh; battery 24.3 V; BB 0 kV/0 Hz.",
+    "note": "Local medium-voltage profile verified against nominal configuration and display photos. Table exponent is combined with the controller's configured engineering range; do not reuse for another controller/range without validation."
+  },
+  "guards": [
+    {
+      "label": "versão da aplicação",
+      "fc": 4,
+      "address": 500,
+      "words": 1,
+      "expected": [
+        1221
+      ]
+    },
+    {
+      "label": "nome do controlador",
+      "fc": 4,
+      "address": 770,
+      "words": 4,
+      "expected": [
+        16711,
+        17201,
+        13616,
+        19777
+      ]
+    },
+    {
+      "label": "nominal U1",
+      "fc": 3,
+      "address": 4410,
+      "words": 1,
+      "expected": [
+        1380
+      ]
+    },
+    {
+      "label": "faixa mínima U1",
+      "fc": 3,
+      "address": 6410,
+      "words": 1,
+      "expected": [
+        40
+      ]
+    },
+    {
+      "label": "faixa máxima U1",
+      "fc": 3,
+      "address": 8410,
+      "words": 1,
+      "expected": [
+        7500
+      ]
+    }
+  ],
+  "voltage_rules": {
+    "metric": "mains_voltage_l12",
+    "low": 12420,
+    "high": 15180,
+    "hysteresis": 181.57895,
+    "note": "Original application's 90%/110% limits and 5/380 hysteresis rescaled to the configured 13.8 kV nominal; local software rules only."
+  },
+  "mappings": [
+    {
+      "metric": "voltage_l12",
+      "fc": 4,
+      "address": 501,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "voltage_l23",
+      "fc": 4,
+      "address": 502,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "voltage_l31",
+      "fc": 4,
+      "address": 503,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "mains_voltage_l12",
+      "fc": 4,
+      "address": 501,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "mains_voltage_l23",
+      "fc": 4,
+      "address": 502,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "mains_voltage_l31",
+      "fc": 4,
+      "address": 503,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "voltage_l1n",
+      "fc": 4,
+      "address": 504,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "voltage_l2n",
+      "fc": 4,
+      "address": 505,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "voltage_l3n",
+      "fc": 4,
+      "address": 506,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "frequency",
+      "fc": 4,
+      "address": 507,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 2
+    },
+    {
+      "metric": "mains_frequency",
+      "fc": 4,
+      "address": 507,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 2
+    },
+    {
+      "metric": "current_l1",
+      "fc": 4,
+      "address": 513,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 0
+    },
+    {
+      "metric": "current_l2",
+      "fc": 4,
+      "address": 514,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 0
+    },
+    {
+      "metric": "current_l3",
+      "fc": 4,
+      "address": 515,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 0
+    },
+    {
+      "metric": "power_kw",
+      "fc": 4,
+      "address": 519,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "mains_power_kw",
+      "fc": 4,
+      "address": 519,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "power_kvar",
+      "fc": 4,
+      "address": 523,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "power_kva",
+      "fc": 4,
+      "address": 527,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "energy_kwh",
+      "fc": 4,
+      "address": 536,
+      "words": 2,
+      "value_type": "s32",
+      "scale_exp": -1
+    },
+    {
+      "metric": "power_factor",
+      "fc": 4,
+      "address": 538,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 2
+    },
+    {
+      "metric": "mains_power_factor",
+      "fc": 4,
+      "address": 538,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 2
+    },
+    {
+      "metric": "battery_voltage",
+      "fc": 4,
+      "address": 567,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 1
+    },
+    {
+      "metric": "mains_available",
+      "fc": 2,
+      "address": 5,
+      "words": 1,
+      "value_type": "bool_not",
+      "scale_exp": 0
+    },
+    {
+      "metric": "mains_breaker",
+      "fc": 2,
+      "address": 1,
+      "words": 1,
+      "value_type": "bool",
+      "scale_exp": 0
+    },
+    {
+      "metric": "tie_breaker",
+      "fc": 2,
+      "address": 0,
+      "words": 1,
+      "value_type": "bool",
+      "scale_exp": 0
+    },
+    {
+      "metric": "bus_voltage_l12",
+      "fc": 4,
+      "address": 539,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "bus_voltage_l23",
+      "fc": 4,
+      "address": 540,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "bus_voltage_l31",
+      "fc": 4,
+      "address": 541,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": -1
+    },
+    {
+      "metric": "bus_frequency",
+      "fc": 4,
+      "address": 545,
+      "words": 1,
+      "value_type": "s16",
+      "scale_exp": 2
+    }
+  ]
+}

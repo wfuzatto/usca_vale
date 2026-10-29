@@ -2,3 +2,7 @@
 /*.zip
 *.log
 /vendor/
+/var/
+/RELATORIO_INSTALACAO.md
+/backups/*
+!/backups/.htaccess

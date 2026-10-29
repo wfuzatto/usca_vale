@@ -4,33 +4,40 @@
 (function(){
   const graphColors=['#147df0','#12b957','#ed3449'];
   const graphKeys={
-    Voltage:{id:'chartVoltage',legend:'legendVoltage',keys:['voltage_l12','voltage_l23','voltage_l31'],labels:['L1-L2','L2-L3','L3-L1']},
+    Voltage:{id:'chartVoltage',legend:'legendVoltage',keys:['voltage_l12','voltage_l23','voltage_l31'],labels:['L1-L2','L2-L3','L3-L1'],title:'Tensão',unit:'V'},
     Frequency:{id:'chartFrequency',legend:'legendFrequency',keys:['mains_frequency','generator_frequency'],labels:['Concessionária','Gerador']},
     Current:{id:'chartCurrent',legend:'legendCurrent',keys:['current_l1','current_l2','current_l3'],labels:['Fase L1','Fase L2','Fase L3']},
-    Power:{id:'chartPower',legend:'legendPower',keys:['power_kw'],labels:['Potência ativa']},
+    Power:{id:'chartPower',legend:'legendPower',keys:['power_kw'],labels:['Potência ativa'],title:'Potência Ativa',unit:'kW'},
     Factor:{id:'chartFactor',legend:'legendFactor',keys:['power_factor'],labels:['Fator de potência']},
-    Demand:{id:'chartDemand',legend:'legendDemand',keys:['power_kva'],labels:['Demanda']}
+    Demand:{id:'chartDemand',legend:'legendDemand',keys:['power_kva'],labels:['Demanda'],title:'Demanda',unit:'kVA'}
   };
   const vState={hours:1/12,chartLast:0,chartLoading:false,chartData:null,chartDevice:null,topology:{mains:'Concessionária',bus:'Barramento',loads:'Cargas do Parque'}};
   const icon=name=>`<svg class="ic" aria-hidden="true"><use href="#ic-${name}"></use></svg>`;
   const valid=d=>!!d && Number(d.enabled)===1 && !d.stale && !!d.latest && d.latest.values && typeof d.latest.values==='object';
-  const value=(d,k)=>{if(!valid(d))return null;const n=d.latest.values[k];return n===undefined||n===null||!Number.isFinite(Number(n))?null:Number(n)};
-  const bit=(d,k)=>{let n=value(d,k);return n===null?null:n!==0};
+  const value=(d,k)=>{if(!valid(d))return null;const n=d.latest.values[k];return n===undefined||n===null||n===''||!Number.isFinite(Number(n))?null:Number(n)};
+  const bit=(d,k)=>{const n=value(d,k);return n===1?true:n===0?false:null};
   const firstValue=(d,keys)=>{for(const k of keys){const n=value(d,k);if(n!==null)return n}return null};
   const number=(v,dec=1)=>v===null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec});
-  const metric=(d,keys,unit='',dec=1)=>{const n=firstValue(d,keys);return n===null?'—':`${number(n,dec)}${unit?' '+unit:''}`};
+  const engineeringUnit=unit=>({V:'kV',kW:'MW',kVA:'MVA',kvar:'Mvar',kWh:'MWh'})[unit];
+  const reading=(n,unit='',dec=1)=>{
+    if(n===null)return '—';
+    const scaled=engineeringUnit(unit);
+    if(scaled&&Math.abs(n)>=1000)return `${number(n/1000,Math.max(2,dec))} ${scaled}`;
+    return `${number(n,dec)}${unit?' '+unit:''}`;
+  };
+  const metric=(d,keys,unit='',dec=1)=>reading(firstValue(d,keys),unit,dec);
   const txt=x=>esc(String(x??''));
   const shortTime=x=>{if(!x)return '—';const d=new Date(String(x).replace(' ','T').replace(/Z?$/,'Z'));return Number.isFinite(d.getTime())?d.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—'};
   const valsSource=(d,gen)=>gen ?
-     [[['voltage_l12'],'Tensão L1-L2','V',1],[['generator_frequency','frequency'],'Frequência','Hz',1],[['current_l1'],'Corrente','A',0]] :
-     [[['voltage_l12'],'Tensão L1-L2','V',1],[['voltage_l23'],'Tensão L2-L3','V',1],[['voltage_l31'],'Tensão L3-L1','V',1]];
+     [[['voltage_l12'],'Tensão L1-L2','V',1],[['generator_frequency','frequency'],'Frequência','Hz',2],[['current_l1'],'Corrente','A',0]] :
+     [[['mains_voltage_l12'],'Tensão L1-L2','V',1],[['mains_voltage_l23'],'Tensão L2-L3','V',1],[['mains_voltage_l31'],'Tensão L3-L1','V',1]];
   const valsPower=(d,gen)=>gen ?
      [[['power_kw'],'Potência Ativa','kW',0],[['power_kva'],'Potência Aparente','kVA',0],[['power_factor'],'Fator de Potência','',2],[['engine_hours'],'Horas de Operação','h',0]] :
-     [[['mains_frequency','frequency'],'Frequência','Hz',1],[['power_kw'],'Potência Ativa','kW',0],[['power_factor'],'Fator de Potência','',2]];
-  function getMain(devices){return devices.find(d=>d.role==='mains') || devices.find(d=>valid(d) && bit(d,'mains_available')!==null)|| devices.find(d=>d.role==='simulator') ||null;}
-  function getGenerators(devices){const list=devices.filter(d=>d.role==='generator');for(const d of devices){if(list.length>=3)break;if(!list.includes(d) && valid(d) && bit(d,'generator_running')!==null)list.push(d)}return list.slice(0,3)}
+     [[['mains_frequency'],'Frequência','Hz',2],[['mains_power_kw'],'Potência Ativa','kW',0],[['mains_power_factor'],'Fator de Potência','',2]];
+  function getMain(devices){return devices.find(d=>d.role==='mains' && Number(d.enabled)===1) || devices.find(d=>valid(d) && bit(d,'mains_available')!==null)|| devices.find(d=>d.role==='simulator' && valid(d)) ||null;}
+  function getGenerators(devices){const list=devices.filter(d=>d.role==='generator');for(const d of devices){if(list.length>=3)break;if(['controller','simulator'].includes(d.role) && valid(d) && bit(d,'generator_running')!==null)list.push(d)}return list.slice(0,3)}
   function cardStatus(d,gen){
-    if(!d)return {state:'NÃO CADASTRADO',note:'Cadastrar equipamento',color:'grey'};
+    if(!d)return gen?{state:'NÃO CADASTRADO',note:'Cadastrar equipamento',color:'grey'}:{state:'SEM LEITURA',note:'Medição da concessionária não configurada',color:'grey'};
     if(Number(d.enabled)!==1)return {state:'DESABILITADO',note:'Coleta desabilitada',color:'grey'};
     if(!valid(d))return {state:d.last_seen?'SEM COMUNICAÇÃO':'SEM LEITURA',note:'Dados indisponíveis',color:d.last_seen?'red':'grey'};
     const fault=bit(d,'generator_fault');if(gen && fault===true)return {state:'FALHA',note:'Alarme informado pelo controlador',color:'red'};
@@ -44,7 +51,7 @@
     return {state:'MONITORANDO',note:'Estado não mapeado',color:'blue'};
   }
   function card(d,title,isGenerator){
-    const s=cardStatus(d,isGenerator),simulate=!!d&&Number(d.simulate)===1;
+    const s=cardStatus(d,isGenerator),simulate=!!d&&Number(d.enabled)===1&&Number(d.simulate)===1;
     function readings(rows){return `<div class="reading-column">${rows.map(([keys,label,unit,dec])=>{const result=metric(d,keys,unit,dec);return `<div class="reading-line"><span class="reading-label" title="${txt(label)}">${txt(label)}</span><b class="reading-value ${result==='—'?'missing':''}">${txt(result)}</b></div>`}).join('')}</div>`}
     return `<article class="generator-card" aria-label="${txt(title)}: ${txt(s.state)}">
       <div class="generator-card-header"><span class="generator-card-icon ${s.color}">${icon(isGenerator?'zapbox':'tower')}</span><div class="generator-card-titles"><h2>${txt(title)}</h2><strong class="state ${s.color}">${txt(s.state)}</strong><p title="${txt(s.note)}">${simulate?'SIMULAÇÃO · ':''}${txt(s.note)}</p></div>${s.color==='red'?`<span class="generator-card-alert">${icon('alert')}</span>`:''}</div>
@@ -80,11 +87,13 @@
   }
   function diagram(data){
     const dev=data.devices,main=getMain(dev),gens=getGenerators(dev);
-    const sourceState=bit(main,'mains_available'),mainBreaker=bit(main,'mains_breaker');
-    const supply=mainBreaker===true || gens.some(d=>bit(d,'generator_breaker')===true);
-    const busVoltage=mainBreaker===true?metric(main,['voltage_l12'],'V',0): gens.find(d=>bit(d,'generator_breaker')===true)?metric(gens.find(d=>bit(d,'generator_breaker')===true),['voltage_l12'],'V',0):null;
-    const freq=mainBreaker===true?metric(main,['mains_frequency','frequency'],'Hz',1): gens.find(d=>bit(d,'generator_breaker')===true)?metric(gens.find(d=>bit(d,'generator_breaker')===true),['generator_frequency','frequency'],'Hz',1):null;
-    const busLabel=supply?(busVoltage&&freq&&busVoltage!=='—'&&freq!=='—'?`${busVoltage} / ${freq}`:'Alimentação informada'):'Alimentação não confirmada';
+    const sourceState=bit(main,'mains_available'),mainBreaker=bit(main,'mains_breaker'),tieBreaker=bit(main,'tie_breaker');
+    const busVoltage=firstValue(main,['bus_voltage_l12']),busFrequency=firstValue(main,['bus_frequency']);
+    const busDead=busVoltage!==null&&busVoltage<=0;
+    const mainsSupply=sourceState===true&&mainBreaker===true&&tieBreaker===true;
+    const activeGen=gens.find(d=>bit(d,'generator_breaker')===true&&bit(d,'generator_running')===true)||null;
+    const supply=!busDead&&(mainsSupply||!!activeGen);
+    const busLabel=busVoltage!==null||busFrequency!==null?`${reading(busVoltage,'V',1)} / ${reading(busFrequency,'Hz',2)}`:supply?'Alimentação confirmada; barramento sem medição':'Alimentação não confirmada';
     const topo=vState.topology;
     let html=`<svg class="energy-schematic" viewBox="0 0 950 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Diagrama unifilar conceitual. Os contatos verdes só indicam estados quando validados por telemetria.">
     <g class="tower" transform="translate(0,-9) scale(1,.71)"><path d="M80 42 50 158 M80 42 111 158 M60 95h40M53 122h55M46 157h70M67 76l13-12 13 12M65 104l31 24M95 104l-31 24M54 138l52 19M106 138l-52 19"/></g>
@@ -92,8 +101,9 @@
     ${statusPill(81,133,sourceState===true?'NORMAL':sourceState===false?'FALHA':'SEM LEITURA',sourceState===true?'green':sourceState===false?'red':'grey')}
     <path class="wire" d="M120 98H190M228 98H298V145H918"/>
     <rect class="element-box ${mainBreaker===true?'is-active':mainBreaker===false?'faulty':'inactive'}" x="190" y="88" width="38" height="19"/>
-    <path class="wire" d="M198 106l22-17"/><text class="diagram-sub" x="287" y="69" text-anchor="middle">Entrada Geral</text>
-    <rect class="element-box ${mainBreaker===true?'is-active':mainBreaker===false?'faulty':'inactive'}" x="282" y="80" width="24" height="37"/>
+    <text class="diagram-sub" x="209" y="69" text-anchor="middle">Rede (MB)</text>
+    <path class="wire" d="M198 106l22-17"/><text class="diagram-sub" x="294" y="52" text-anchor="middle">Interligação (TB)</text>
+    <rect class="element-box ${tieBreaker===true?'is-active':tieBreaker===false?'faulty':'inactive'}" x="282" y="80" width="24" height="37"/>
     <path class="wire" d="M292 69v11"/>
     <text class="diagram-title" x="410" y="132" text-anchor="middle">${txt(topo.bus.toUpperCase())}</text>
     <text class="bus-label" x="410" y="161" text-anchor="middle">${txt(busLabel)}</text>`;
@@ -169,7 +179,11 @@
   function renderAllCharts(){if(!vState.chartData)return;for(const g of Object.values(graphKeys)){
     const el=$(g.id),legend=$(g.legend);if(!el||!legend)continue;
     const all=g.keys.map((k,i)=>({key:k,color:graphColors[i%3],label:g.labels[i]}));
-    const found=chart(el,vState.chartData.rows,all,vState.chartData.bucket_seconds);
+    const rows=vState.chartData.rows;
+    const scaled=g.unit&&engineeringUnit(g.unit)&&rows.some(r=>g.keys.some(k=>r[k]!==null&&r[k]!==undefined&&Math.abs(Number(r[k]))>=1000));
+    const displayRows=scaled?rows.map(r=>({...r,...Object.fromEntries(g.keys.map(k=>[k,r[k]===null||r[k]===undefined?null:Number(r[k])/1000]))})):rows;
+    if(g.title)el.parentElement.querySelector('h3').textContent=`${g.title} (${scaled?engineeringUnit(g.unit):g.unit})`;
+    const found=chart(el,displayRows,all,vState.chartData.bucket_seconds);
     legend.innerHTML=found.map(s=>`<span class="chart-legend-item"><i class="chart-legend-line" style="background:${s.color}"></i>${txt(s.label)}</span>`).join('');
   }}
   window.uscaRefreshCharts=async function(data,force=false){

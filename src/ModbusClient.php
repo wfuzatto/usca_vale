@@ -41,6 +41,7 @@ final class ModbusClient {
     public static function decode(array $words, string $type, int $scale): float {
         $first=(int)($words[0]??0);
         if ($type==='bool') return $first ? 1.0 : 0.0;
+        if ($type==='bool_not') return $first ? 0.0 : 1.0;
         if ($type==='s16') $v=$first>=32768?$first-65536:$first;
         elseif ($type==='u16') $v=$first;
         elseif ($type==='u32' || $type==='s32') {

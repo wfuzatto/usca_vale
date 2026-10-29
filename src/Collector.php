@@ -24,7 +24,7 @@ final class Collector {
                 if ($wasError) $this->log($id,true,'Conexão recuperada');
                 $this->applyRules($d,$now,$data);
                 $this->transitions($d,$now,$data);
-                $results[]=['device'=>$id,'ok'=>true,'metrics'=>count($data)];
+                $results[]=['device'=>$id,'ok'=>true,'metrics'=>count(array_filter(array_keys($data),fn($key)=>!str_starts_with((string)$key,'_')))];
             } catch(Throwable $e) {
                 $msg=mbOrSubstr($e->getMessage(),240);
                 q('UPDATE devices SET last_error=? WHERE id=?',[$msg,$id]);
@@ -45,12 +45,24 @@ final class Collector {
         $maps=q('SELECT * FROM mappings WHERE device_id=? AND enabled=1 ORDER BY fc,address',[$id])->fetchAll();
         if (!$maps) throw new RuntimeException('Mapeamento vazio: configure os endereços oficiais do controlador');
         $client=new ModbusClient((string)$device['host'],(int)$device['port']);
-        $out=[];
+        $cache=[];
+        $read=function(int $fc,int $address,int $count) use($client,$device,&$cache): array {
+            $key=$fc.':'.$address.':'.$count;
+            return $cache[$key]??= $client->read((int)$device['unit_id'],$fc,$address,$count);
+        };
+        $profile=json_decode(setting('modbus_profile_'.$id,'{}'),true);
+        if (!is_array($profile)) throw new RuntimeException('Perfil Modbus inválido');
+        foreach($profile['guards']??[] as $guard) {
+            $raw=$read((int)$guard['fc'],(int)$guard['address'],(int)$guard['words']);
+            if ($raw!==$guard['expected']) throw new RuntimeException('Configuração DEIF alterada: '.($guard['label']??$guard['address']).'. Revise o perfil Modbus antes de coletar.');
+        }
+        $out=[];$rawValues=[];
         foreach($maps as $m) {
             $fc=(int)$m['fc'];$count=(int)$m['words'];
             if (!in_array($fc,[1,2,3,4],true) || $count<1 || $count>2) throw new RuntimeException('Mapeamento inválido');
-            $raw=$client->read((int)$device['unit_id'],$fc,(int)$m['address'],$count);
+            $raw=$read($fc,(int)$m['address'],$count);
             $out[$m['metric']]=ModbusClient::decode($raw,$m['value_type'],(int)$m['scale_exp']);
+            $rawValues[$m['metric']]=['fc'=>$fc,'address'=>(int)$m['address'],'words'=>$raw,'scale_exp'=>(int)$m['scale_exp'],'value_type'=>$m['value_type']];
         }
         // Controller alarm list (documented FC04 / addresses 28000..28099).
         // If not accessible on this firmware, do not invent alarms.
@@ -59,6 +71,7 @@ final class Collector {
             $alarms=array_values(array_unique(array_filter(array_map('intval',$alarms),fn($v)=>$v>0)));
             $this->syncControllerAlarms($id,$alarms);
         } catch(Throwable $ignored) { /* alarm list unavailable; no alarm-state inference */ }
+        if (!empty($profile['id'])) $out['_provenance']=['mapping_version'=>$profile['id'],'raw'=>$rawValues];
         return $out;
     }
     private function syncControllerAlarms(int $id,array $alarms): void {
@@ -86,6 +99,11 @@ final class Collector {
             'mains_available'=>$mains?1:0,'source_generator'=>$gensupply?1:0,
             'generator_running'=>$running?1:0,'generator_fault'=>$fault?1:0,
             'mains_breaker'=>$mains&&!$gensupply?1:0,'generator_breaker'=>$gensupply?1:0,
+            'tie_breaker'=>$mains&&!$gensupply?1:0,
+            'mains_voltage_l12'=>$mains?round($v+$j,1):0,'mains_voltage_l23'=>$mains?round($v-$j*.7,1):0,'mains_voltage_l31'=>$mains?round($v+$j*.3,1):0,
+            'mains_power_kw'=>$mains&&!$gensupply?330:0,'mains_power_factor'=>$mains&&!$gensupply?0.92:0,
+            'bus_voltage_l12'=>$gensupply?380:($mains?round($v+$j,1):0),'bus_voltage_l23'=>$gensupply?380:($mains?round($v-$j*.7,1):0),'bus_voltage_l31'=>$gensupply?380:($mains?round($v+$j*.3,1):0),
+            'bus_frequency'=>$gensupply?59.9:$freq,
             'voltage_l12'=>round($v+$j,1),'voltage_l23'=>round($v-$j*.7,1),'voltage_l31'=>round($v+$j*.3,1),
             'voltage_l1n'=>round($v/1.732,1),'voltage_l2n'=>round($v/1.732,1),'voltage_l3n'=>round($v/1.732,1),
             'frequency'=>$gensupply?59.9:$freq, 'mains_frequency'=>$freq, 'generator_frequency'=>$running?60:0,

@@ -46,8 +46,8 @@ try {
     case 'mapping_save':
         $device=(int)($input['device_id']??0);$metric=(string)($input['metric']??'');
         $fc=(int)($input['fc']??4);$addr=(int)($input['address']??-1);$type=(string)($input['value_type']??'u16');$scale=(int)($input['scale_exp']??0);
-        if (!array_key_exists($metric,metricCatalog())||!in_array($fc,[1,2,3,4],true)||!in_array($type,['u16','s16','u32','s32','bool'],true)||$addr<0||$addr>65534||$scale<-9||$scale>9) throw new InvalidArgumentException('Registro inválido');
-        if (in_array($fc,[1,2],true) && $type!=='bool') throw new InvalidArgumentException('FC01/FC02 requer bool');
+        if (!array_key_exists($metric,metricCatalog())||!in_array($fc,[1,2,3,4],true)||!in_array($type,['u16','s16','u32','s32','bool','bool_not'],true)||$addr<0||$addr>65534||$scale<-9||$scale>9) throw new InvalidArgumentException('Registro inválido');
+        if (in_array($fc,[1,2],true) && !in_array($type,['bool','bool_not'],true)) throw new InvalidArgumentException('FC01/FC02 requer bool');
         $words=in_array($type,['u32','s32'],true)?2:1;
         if (!q('SELECT id FROM devices WHERE id=?',[$device])->fetchColumn()) throw new InvalidArgumentException('Dispositivo inexistente');
         q('INSERT INTO mappings(device_id,metric,fc,address,words,value_type,scale_exp) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE fc=VALUES(fc),address=VALUES(address),words=VALUES(words),value_type=VALUES(value_type),scale_exp=VALUES(scale_exp),enabled=1',[$device,$metric,$fc,$addr,$words,$type,$scale]);
@@ -87,16 +87,24 @@ try {
     $labels=json_decode(setting('topology_labels','{}'),true);
     jsonOut(['labels'=>is_array($labels)?$labels:[]]);
  case 'overview':
-    $devices=q('SELECT d.*,s.failure_count FROM devices d LEFT JOIN collector_state s ON s.device_id=d.id ORDER BY d.id')->fetchAll();
+    $realOnly=setting('dashboard_real_only','0')==='1';
+    $devices=q('SELECT d.*,s.failure_count FROM devices d LEFT JOIN collector_state s ON s.device_id=d.id'.($realOnly?' WHERE d.enabled=1 AND d.simulate=0':'').' ORDER BY d.id')->fetchAll();
+    $cutoffs=mappingCutoffs();
     $latest=q('SELECT x.device_id,x.taken_at,x.simulated,x.values_json FROM samples x JOIN (SELECT device_id,MAX(id) id FROM samples GROUP BY device_id) m ON m.id=x.id')->fetchAll();
-    $lookup=[];foreach($latest as $r) $lookup[(int)$r['device_id']]=['timestamp'=>$r['taken_at'].'Z','simulated'=>(bool)$r['simulated'],'values'=>json_decode($r['values_json'],true)];
+    $lookup=[];foreach($latest as $r) {
+        $id=(int)$r['device_id'];
+        if (isset($cutoffs[$id]) && $r['taken_at']<$cutoffs[$id]) continue;
+        $lookup[$id]=['timestamp'=>$r['taken_at'].'Z','simulated'=>(bool)$r['simulated'],'values'=>json_decode($r['values_json'],true)];
+    }
     foreach($devices as &$d) {
       $d['latest']=$lookup[(int)$d['id']]??null;
       $d['stale']= !$d['last_seen'] || time()-strtotime($d['last_seen'])>max(15,(int)$d['poll_seconds']*3);
       unset($d['host']); // equipment credentials/network restricted to administration endpoint
     }unset($d);
-    $active=q('SELECT e.*,d.name device FROM events e JOIN devices d ON d.id=e.device_id WHERE e.ended_at IS NULL ORDER BY e.started_at DESC LIMIT 50')->fetchAll();
-    $recent=q('SELECT e.*,d.name device FROM events e JOIN devices d ON d.id=e.device_id ORDER BY e.id DESC LIMIT 15')->fetchAll();
+    $operational='d.enabled=1 AND e.category<>?';$eventArgs=['mapping_invalidated'];
+    if($realOnly){$operational.=' AND d.simulate=0 AND e.source<>?';$eventArgs[]='simulation';}
+    $active=q('SELECT e.*,d.name device FROM events e JOIN devices d ON d.id=e.device_id WHERE '.$operational.' AND e.ended_at IS NULL ORDER BY e.started_at DESC LIMIT 50',$eventArgs)->fetchAll();
+    $recent=q('SELECT e.*,d.name device FROM events e JOIN devices d ON d.id=e.device_id WHERE '.$operational.' ORDER BY e.id DESC LIMIT 15',$eventArgs)->fetchAll();
     jsonOut(['devices'=>$devices,'active'=>$active,'recent'=>$recent,'catalog'=>metricCatalog(),'server_time'=>gmdate('c')]);
  case 'devices':
     jsonOut(['devices'=>q('SELECT * FROM devices ORDER BY id')->fetchAll(), 'mappings'=>q('SELECT m.* FROM mappings m ORDER BY device_id,metric')->fetchAll(), 'rules'=>q('SELECT * FROM rules ORDER BY id')->fetchAll(),'catalog'=>metricCatalog(),'retention_days'=>(int)setting('retention_days','365')]);
@@ -110,10 +118,13 @@ try {
     $cols=[]; foreach($metrics as $m) $cols[]='AVG(CAST(JSON_UNQUOTE(JSON_EXTRACT(values_json,\'$."'.$m.'"\')) AS DECIMAL(20,5))) AS `'.$m.'`';
     $filter=$device>0?' AND device_id=?':'';
     $params=[$from,$to];if($device>0) $params[]=$device;
+    if($device===0 && setting('dashboard_real_only','0')==='1') $filter.=' AND simulated=0';
+    $cutoffs=mappingCutoffs();
+    foreach($cutoffs as $id=>$cutoff) if($device===0 || $device===$id){$filter.=' AND (device_id<>? OR taken_at>=?)';$params[]=$id;$params[]=$cutoff;}
     $sql='SELECT FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(taken_at)/'.$bucket.')*'.$bucket.') AS bucket,'.implode(',',$cols).',COUNT(*) AS readings FROM samples WHERE taken_at>=? AND taken_at<=?'.$filter.' GROUP BY bucket ORDER BY bucket LIMIT 550';
     $rows=q($sql,$params)->fetchAll();
     foreach($rows as &$r) $r['bucket'].='Z';unset($r);
-    jsonOut(['rows'=>$rows,'metrics'=>$metrics,'bucket_seconds'=>$bucket,'from'=>$from.'Z','to'=>$to.'Z','count'=>count($rows)]);
+    jsonOut(['rows'=>$rows,'metrics'=>$metrics,'bucket_seconds'=>$bucket,'from'=>$from.'Z','to'=>$to.'Z','count'=>count($rows),'invalid_data_before'=>$cutoffs]);
  case 'events':
     $from=mustDate($_GET['from']??null,gmdate('Y-m-d H:i:s',time()-86400));$to=mustDate($_GET['to']??null,gmdate('Y-m-d H:i:s'));
     $device=(int)($_GET['device']??0);$severity=(string)($_GET['severity']??'');
