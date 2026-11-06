@@ -1,6 +1,29 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const state={page:'overview', overview:null, admin:null, device:0, historyData:null};
+function setChartLoading(container,loading,label='Preparando gráfico...'){
+  if(!container)return;
+  let indicator=container.querySelector('.usca-chart-loading');
+  if(loading&&!indicator){
+    indicator=document.createElement('div');
+    indicator.className='usca-chart-loading';
+    indicator.setAttribute('role','status');
+    indicator.setAttribute('aria-live','polite');
+    const spinner=document.createElement('span');
+    spinner.className='usca-chart-spinner';
+    spinner.setAttribute('aria-hidden','true');
+    const message=document.createElement('span');
+    message.className='usca-chart-loading-text';
+    indicator.append(spinner,message);
+    container.appendChild(indicator);
+  }
+  if(indicator){
+    indicator.querySelector('.usca-chart-loading-text').textContent=label;
+    indicator.hidden=!loading;
+  }
+  container.setAttribute('aria-busy',loading?'true':'false');
+}
+
 const COLORS=['#2b7cf1','#23b5ad','#df8b2b','#805bea','#eb6170','#688cb5','#67a466','#b660aa'];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=(v,d=1)=>v===null||v===undefined||v===''?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -51,15 +74,43 @@ function setPeriod(fromId,toId,hours){const now=new Date(),past=new Date(now.get
 function queryPeriod(fromId,toId){return{from:utcParam($(fromId).value),to:utcParam($(toId).value)}}
 function metricsSelected(){return [...document.querySelectorAll('#metricPicks input:checked')].map(x=>x.value)}
 function buildMetricPicker(){const cat=state.overview?.catalog||{};const keys=['voltage_l12','voltage_l23','voltage_l31','frequency','current_l1','current_l2','current_l3','power_kw','power_kva','power_factor','load_pct','engine_rpm','engine_temp','oil_pressure'];$('metricPicks').innerHTML=keys.filter(k=>cat[k]).map((k,i)=>`<label><input type="checkbox" value="${k}" ${[0,1,2].includes(i)?'checked':''}> ${esc(cat[k][0])}</label>`).join('')}
-async function searchHistory(){try{
- const metrics=metricsSelected();if(!metrics.length){notice('Selecione uma grandeza',true);return}
- const device=$('historyDevice').value;
- const data=await api('history',null,{device,metrics:metrics.join(','),...queryPeriod('dateFrom','dateTo')});state.historyData=data;
- $('historySubtitle').textContent=`${data.rows.length} pontos agregados`; $('bucketInfo').textContent=`Amostras por ${data.bucket_seconds} s`;
- $('historyLegend').innerHTML=metrics.map((key,i)=>`<span><i style="background:${COLORS[i%COLORS.length]}"></i>${esc(state.overview.catalog[key][0])}</span>`).join('');
- drawChart($('historyChart'),data.rows,metrics,data.bucket_seconds,data.poll_seconds);
- const ev=await api('events',null,{device,...queryPeriod('dateFrom','dateTo')});$('historyEvents').innerHTML=miniEventTable(ev.rows.slice(0,15));
- }catch(e){notice(e.message,true)}}
+let historySearchSequence=0;
+async function searchHistory(){
+  const metrics=metricsSelected();
+  if(!metrics.length){notice('Selecione uma grandeza',true);return}
+  const requestId=++historySearchSequence;
+  const device=$('historyDevice').value;
+  const chartArea=$('historyChart').parentElement;
+  let loaded=false;
+  setChartLoading(chartArea,true,'Carregando e preparando gráfico...');
+  $('historySubtitle').textContent='Preparando gráfico...';
+  $('historySearch').disabled=true;
+  try{
+    const data=await api('history',null,{device,metrics:metrics.join(','),...queryPeriod('dateFrom','dateTo')});
+    if(requestId!==historySearchSequence)return;
+    state.historyData=data;
+    $('historySubtitle').textContent=`${data.rows.length} pontos agregados`;
+    $('bucketInfo').textContent=`Amostras por ${data.bucket_seconds} s`;
+    $('historyLegend').innerHTML=metrics.map((key,i)=>`<span><i style="background:${COLORS[i%COLORS.length]}"></i>${esc(state.overview.catalog[key][0])}</span>`).join('');
+    drawChart($('historyChart'),data.rows,metrics,data.bucket_seconds,data.poll_seconds);
+    loaded=true;
+  }catch(e){
+    if(requestId===historySearchSequence){
+      $('historySubtitle').textContent='Falha ao carregar gráfico';
+      notice(e.message,true);
+    }
+  }finally{
+    if(requestId===historySearchSequence){
+      setChartLoading(chartArea,false);
+      $('historySearch').disabled=false;
+    }
+  }
+  if(!loaded||requestId!==historySearchSequence)return;
+  try{
+    const ev=await api('events',null,{device,...queryPeriod('dateFrom','dateTo')});
+    if(requestId===historySearchSequence)$('historyEvents').innerHTML=miniEventTable(ev.rows.slice(0,15));
+  }catch(e){if(requestId===historySearchSequence)notice('Falha ao carregar eventos: '+e.message,true)}
+}
 function miniEventTable(rows){return rows.length?`<div class="table-responsive"><table class="table-custom"><thead><tr><th>Horário</th><th>Equipamento</th><th>Evento</th><th>Severidade</th></tr></thead><tbody>${rows.map(e=>`<tr><td>${when(e.started_at)}</td><td>${esc(e.device)}</td><td>${esc(e.message)}</td><td>${badge(e.severity)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-state">Nenhum evento encontrado no intervalo</div>'}
 function drawChart(canvas,rows,series,bucket,pollSeconds){const box=canvas.getBoundingClientRect();const w=Math.max(360,box.width||800),h=Math.max(180,box.height||240),dpr=window.devicePixelRatio||1;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
  ctx.clearRect(0,0,w,h);const L=68,R=20,T=19,B=38;const pw=w-L-R,ph=h-T-B;
