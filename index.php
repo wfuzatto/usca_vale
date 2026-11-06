@@ -16,7 +16,7 @@ function h($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="assets/style.css">
-<link rel="stylesheet" href="assets/mockup-exato.css">
+<link rel="stylesheet" href="assets/mockup-exato.css?v=<?=filemtime(__DIR__.'/assets/mockup-exato.css')?>">
 <link rel="stylesheet" href="assets/chart-hover.css?v=<?=filemtime(__DIR__.'/assets/chart-hover.css')?>">
 </head><body>
 <svg xmlns="http://www.w3.org/2000/svg" class="svg-defs" aria-hidden="true"><defs>
