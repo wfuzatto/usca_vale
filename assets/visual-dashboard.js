@@ -235,12 +235,14 @@
     vState.chartLast=now;vState.chartDevice=source?.id||null;
     if(!source){vState.chartData={rows:[],bucket_seconds:5};renderAllCharts();return}
     vState.chartLoading=true;
+    const chartArea=document.querySelector('#realtimeCharts .six-charts');
+    setChartLoading(chartArea,true,'Atualizando gráficos...');
     try{
       const to=new Date(now).toISOString().slice(0,19).replace('T',' '),from=new Date(now-vState.hours*3600000).toISOString().slice(0,19).replace('T',' ');
       const metrics=[...new Set(Object.values(graphKeys).flatMap(c=>c.keys))];
       vState.chartData=await api('history',null,{device:String(source.id),metrics:metrics.join(','),from,to});
       if(state.page==='overview')renderAllCharts();
-    }catch(e){vState.chartData={rows:[],bucket_seconds:5};renderAllCharts();console.warn('Falha ao carregar gráficos:',e.message)}finally{vState.chartLoading=false}
+    }catch(e){vState.chartData={rows:[],bucket_seconds:5};renderAllCharts();console.warn('Falha ao carregar gráficos:',e.message)}finally{vState.chartLoading=false;setChartLoading(chartArea,false)}
   };
   function setClock(){const now=new Date();$('headerClock').textContent=now.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','');}
   function init(){
